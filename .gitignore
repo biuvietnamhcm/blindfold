@@ -1,0 +1,35 @@
+# -----------------------------------------------------------------------------
+# STM32CubeIDE
+# -----------------------------------------------------------------------------
+
+# Build output
+Debug/
+Release/
+
+# Build output in subdirectories (if using multiple projects)
+**/Debug/
+**/Release/
+
+# Generated object files
+*.o
+*.d
+*.su
+*.elf
+*.hex
+*.bin
+*.map
+*.list
+*.lst
+*.a
+
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Vim
+*.swp
+*.swo
+
+# Backup files
+*~
