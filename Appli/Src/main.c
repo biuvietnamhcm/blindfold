@@ -84,6 +84,7 @@ static void MX_I2C1_Init(void);
 static void SystemIsolation_Config(void);
 /* USER CODE BEGIN PFP */
 static void Netif_Config(void);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -161,6 +162,8 @@ int main(void)
    * services it, the main loop below drives it directly. */
   lwip_init();
   Netif_Config();
+  uint32_t oled_uptime_s = 0;
+  uint32_t last_tick = HAL_GetTick();
   /* USER CODE END 2 */
 
   /* Infinite loop */
