@@ -63,21 +63,28 @@ typedef funcptr funcptr_NS;
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
 
-/* Fallback static IPv4 address, used only if DHCP times out
-   (see DHCP_Process() in app_ethernet.c). Adjust to fit your LAN. */
+/* Static IPv4 address for the board (DHCP is disabled, see LWIP_DHCP in
+   lwipopts.h). Meant for a direct Ethernet-cable link to a desktop PC:
+   set the PC's interface to 192.168.7.1 / 255.255.255.0 (no gateway
+   needed) and the board will be reachable at 192.168.7.10.
+   Adjust here if you need a different subnet, e.g. to join an existing
+   LAN through a switch/router instead of a direct cable. */
 #define IP_ADDR0   ((uint8_t) 192U)
 #define IP_ADDR1   ((uint8_t) 168U)
-#define IP_ADDR2   ((uint8_t) 88U)
-#define IP_ADDR3   ((uint8_t) 125U)
+#define IP_ADDR2   ((uint8_t) 7U)
+#define IP_ADDR3   ((uint8_t) 10U)
 
 #define NETMASK_ADDR0   ((uint8_t) 255U)
 #define NETMASK_ADDR1   ((uint8_t) 255U)
 #define NETMASK_ADDR2   ((uint8_t) 255U)
 #define NETMASK_ADDR3   ((uint8_t) 0U)
 
+/* Unused for a direct point-to-point link (no router in between), but
+   kept on the same subnet as IP_ADDR so it's well-formed if you later
+   move this onto a routed network. */
 #define GW_ADDR0   ((uint8_t) 192U)
 #define GW_ADDR1   ((uint8_t) 168U)
-#define GW_ADDR2   ((uint8_t) 0U)
+#define GW_ADDR2   ((uint8_t) 7U)
 #define GW_ADDR3   ((uint8_t) 1U)
 
 /* USER CODE END EC */

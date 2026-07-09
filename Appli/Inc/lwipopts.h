@@ -75,7 +75,11 @@
 #define LWIP_ICMP                       1
 
 /* ---------- DHCP options ---------- */
-#define LWIP_DHCP               1
+/* Disabled: this board always boots with the fixed static IP defined by
+   IP_ADDR0..3 / NETMASK_ADDR0..3 / GW_ADDR0..3 in main.h. No DHCP server
+   is contacted, so link-up brings the interface straight up with that
+   address instead of spending several seconds negotiating one. */
+#define LWIP_DHCP               0
 
 /* ---------- UDP options ---------- */
 #define LWIP_UDP                1
