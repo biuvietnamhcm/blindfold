@@ -10,6 +10,7 @@
 #define NET_ROW_Y0   16U
 #define NET_ROW_Y1   24U
 #define NET_ROW_Y2   32U
+#define NET_ROW_DEBUG_Y  40U
 
 static void draw_row(uint8_t y, const char *text)
 {
@@ -29,5 +30,11 @@ void NetDisplay_ShowStatus(const char *line1, const char *line2, const char *lin
     draw_row(NET_ROW_Y0, line1);
     draw_row(NET_ROW_Y1, line2);
     draw_row(NET_ROW_Y2, line3);
+    SH1106_UpdateScreen();
+}
+
+void NetDisplay_ShowDebug(const char *line)
+{
+    draw_row(NET_ROW_DEBUG_Y, line);
     SH1106_UpdateScreen();
 }

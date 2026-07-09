@@ -164,6 +164,10 @@ int main(void)
   Netif_Config();
   uint32_t oled_uptime_s = 0;
   uint32_t last_tick = HAL_GetTick();
+  /* TEMP DEBUG: separate fast timer for the raw PHY register dump, see
+   * ethernet_phy_debug_print() in ethernetif.c. Remove along with that
+   * call once the link-detection bug is found. */
+  uint32_t phy_debug_timer = HAL_GetTick();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -186,6 +190,15 @@ int main(void)
 #if LWIP_DHCP
     DHCP_Periodic_Handle(&gnetif);
 #endif
+
+    /* TEMP DEBUG: refresh the raw PHY register row every 200ms so you
+     * can watch it change live as you plug/unplug the cable. Remove
+     * this block (and ethernet_phy_debug_print()) once done. */
+    if (oled_status == SH1106_OK && (HAL_GetTick() - phy_debug_timer) >= 200)
+    {
+      phy_debug_timer = HAL_GetTick();
+      ethernet_phy_debug_print();
+    }
 
     if (oled_status == SH1106_OK && (HAL_GetTick() - last_tick) >= 1000)
     {

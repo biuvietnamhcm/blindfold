@@ -25,7 +25,9 @@
 #include "netif/etharp.h"
 #include "ethernetif.h"
 #include "lan8742.h"
+#include "net_display.h"
 #include <string.h>
+#include <stdio.h>
 
 /* Private define ------------------------------------------------------------*/
 /* Network interface name */
@@ -372,6 +374,44 @@ void ethernet_link_check_state(struct netif *netif)
       netif_set_link_up(netif);
     }
   }
+}
+
+/**
+  * @brief  TEMP DEBUG. Reads the LAN8742's address + raw BSR register +
+  *         the decoded link-state code straight from the PHY (bypassing
+  *         all the netif/lwIP bookkeeping) and prints it to the OLED
+  *         debug row. This tells us whether a "link up while unplugged"
+  *         symptom is:
+  *           - a bad/floating MDIO read (DevAddr looks wrong, e.g. not
+  *             0 or 1, or BSR reads back as 0xFFFF -- classic "nobody
+  *             answered on this address" pattern), or
+  *           - a genuinely-set LINK_STATUS bit (BSR bit2, i.e. BSR &
+  *             0x0004), which would point at the PHY/board itself
+  *             rather than the driver.
+  *         Call this often (e.g. every 200-300ms) from the main loop
+  *         and watch the row live while you plug/unplug the cable.
+  */
+void ethernet_phy_debug_print(void)
+{
+  uint32_t bsr = 0;
+  int32_t phy_status;
+  char line[17];
+
+  /* Raw register read, not the cached/latched value GetLinkState()
+   * uses internally -- read it twice back-to-back like the driver
+   * does, since BSR bit2 is latching-low on some reads. */
+  (void)ETH_PHY_IO_ReadReg(LAN8742.DevAddr, LAN8742_BSR, &bsr);
+  (void)ETH_PHY_IO_ReadReg(LAN8742.DevAddr, LAN8742_BSR, &bsr);
+
+  phy_status = LAN8742_GetLinkState(&LAN8742);
+
+  /* addr:BSR-hex:decoded-status, e.g. "A0 B:782D S:1" */
+  snprintf(line, sizeof(line), "A%lu B:%04lX S:%ld",
+           (unsigned long)LAN8742.DevAddr,
+           (unsigned long)(bsr & 0xFFFFU),
+           (long)phy_status);
+
+  NetDisplay_ShowDebug(line);
 }
 
 /*******************************************************************************
