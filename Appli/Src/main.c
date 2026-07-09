@@ -19,10 +19,11 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "string.h"
+#include <stdio.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "sh1106.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -115,20 +116,60 @@ int main(void)
   BSP_LED_Init(LED_RED);
   BSP_LED_Init(LED_GREEN);
   BSP_LED_Init(LED_BLUE);
+
+  for(int i = 0; i < 10; i++){
+    BSP_LED_Toggle(LED_BLUE);
+    HAL_Delay(50);
+  }
+
+  SH1106_Status oled_status = SH1106_Init(&hi2c1);
+
+  if (oled_status == SH1106_OK)
+  {
+    SH1106_Fill(SH1106_COLOR_BLACK);
+    SH1106_DrawRectangle(0, 0, SH1106_WIDTH - 1, SH1106_HEIGHT - 1, SH1106_COLOR_WHITE);
+    SH1106_SetCursor(8, 8);
+    SH1106_WriteString("BlindFold", SH1106_COLOR_WHITE);
+    SH1106_SetCursor(8, 24);
+    SH1106_WriteString("SH1106 OK", SH1106_COLOR_WHITE);
+    SH1106_SetCursor(8, 40);
+    SH1106_WriteString("N657X0-Q", SH1106_COLOR_WHITE);
+    SH1106_UpdateScreen();
+  }
+  else
+  {
+    /* No ACK from the OLED (wrong wiring, missing pull-ups, or wrong
+     * address) -- fast-blink red so it's obvious at a glance, then
+     * keep going instead of hanging forever. */
+    for (uint8_t i = 0; i < 10; i++)
+    {
+      BSP_LED_Toggle(LED_RED);
+      HAL_Delay(80);
+    }
+    BSP_LED_Off(LED_RED);
+  }
+  BSP_LED_Toggle(LED_GREEN);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  uint32_t oled_uptime_s = 0;
+  uint32_t last_tick = HAL_GetTick();
+
   while (1)
   {
-    /* USER CODE END WHILE */
-	BSP_LED_Toggle(LED_GREEN);
-	HAL_Delay(200);
-	BSP_LED_Toggle(LED_BLUE);
-	HAL_Delay(200);
-	BSP_LED_Toggle(LED_RED);
-	HAL_Delay(200);
     /* USER CODE BEGIN 3 */
+    if (oled_status == SH1106_OK && (HAL_GetTick() - last_tick) >= 1000)
+    {
+      last_tick = HAL_GetTick();
+      oled_uptime_s++;
+
+      char line[16];
+      snprintf(line, sizeof(line), "up: %lus  ", (unsigned long)oled_uptime_s);
+      SH1106_SetCursor(8, 40);
+      SH1106_WriteString(line, SH1106_COLOR_WHITE);
+      SH1106_UpdateScreen();
+    }
   }
   /* USER CODE END 3 */
 }
