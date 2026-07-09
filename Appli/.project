@@ -41,7 +41,7 @@
 		<link>
 			<name>Drivers/BSP/Components</name>
 			<type>2</type>
-			<locationURI>PARENT-1-PROJECT_LOC/Drivers/BSP/Components</locationURI>
+			<location>/home/biu/STM32CubeIDE/workspace_2.2.0/RedEye/Drivers/BSP/Components</location>
 		</link>
 		<link>
 			<name>Drivers/STM32N6xx_HAL_Driver/stm32n6xx_hal.c</name>

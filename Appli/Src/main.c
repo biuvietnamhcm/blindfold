@@ -129,7 +129,6 @@ int main(void)
     BSP_LED_Toggle(LED_BLUE);
     HAL_Delay(50);
   }
-
   SH1106_Status oled_status = SH1106_Init(&hi2c1);
 
   /* Dashboard layout (128x64, 8px rows, no border so every row gets the
@@ -172,6 +171,7 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
+
 
     /* USER CODE BEGIN 3 */
 

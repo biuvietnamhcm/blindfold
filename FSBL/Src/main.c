@@ -86,6 +86,9 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
+  BSP_LED_Init(LED_BLUE);
+  BSP_LED_Init(LED_RED);
+  BSP_LED_Init(LED_GREEN);
 
   /* USER CODE END Init */
 
@@ -102,13 +105,12 @@ int main(void)
   MX_XSPI2_Init();
   MX_EXTMEM_MANAGER_Init();
   /* USER CODE BEGIN 2 */
-
+  for(int i=0; i <6; i++){
+	  BSP_LED_Toggle(LED_BLUE);
+	  HAL_Delay(100);
+  }
   /* USER CODE END 2 */
 
-  /* Initialize leds */
-  BSP_LED_Init(LED_BLUE);
-  BSP_LED_Init(LED_RED);
-  BSP_LED_Init(LED_GREEN);
 
   /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
