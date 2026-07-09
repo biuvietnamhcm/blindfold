@@ -111,6 +111,10 @@ int main(void)
   }
   /* USER CODE END 2 */
 
+  /* Initialize leds */
+  BSP_LED_Init(LED_BLUE);
+  BSP_LED_Init(LED_RED);
+  BSP_LED_Init(LED_GREEN);
 
   /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);

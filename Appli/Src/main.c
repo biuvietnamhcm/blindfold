@@ -172,7 +172,6 @@ int main(void)
   {
     /* USER CODE END WHILE */
 
-
     /* USER CODE BEGIN 3 */
 
     /* Service the network stack. NO_SYS/polling mode: these must be
