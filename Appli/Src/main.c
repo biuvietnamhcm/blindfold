@@ -27,6 +27,7 @@
 #include "lwip/netif.h"
 #include "lwip/timeouts.h"
 #include "netif/etharp.h"
+#include "netif/ethernet.h"
 #include "ethernetif.h"
 #include "app_ethernet.h"
 #include "net_display.h"
@@ -371,6 +372,46 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+/**
+  * @brief  Bring up the LwIP network interface on top of heth1 / ethernetif.
+  * @retval None
+  */
+static void Netif_Config(void)
+{
+  ip_addr_t ipaddr;
+  ip_addr_t netmask;
+  ip_addr_t gw;
+
+#if LWIP_DHCP
+  ip_addr_set_zero_ip4(&ipaddr);
+  ip_addr_set_zero_ip4(&netmask);
+  ip_addr_set_zero_ip4(&gw);
+#else
+  IP_ADDR4(&ipaddr, IP_ADDR0, IP_ADDR1, IP_ADDR2, IP_ADDR3);
+  IP_ADDR4(&netmask, NETMASK_ADDR0, NETMASK_ADDR1, NETMASK_ADDR2, NETMASK_ADDR3);
+  IP_ADDR4(&gw, GW_ADDR0, GW_ADDR1, GW_ADDR2, GW_ADDR3);
+#endif /* LWIP_DHCP */
+
+  /* Add the network interface: ethernetif_init() brings up heth1,
+   * ethernet_input() is LwIP's standard Ethernet-frame demux. */
+  netif_add(&gnetif, &ipaddr, &netmask, &gw, NULL, &ethernetif_init, &ethernet_input);
+
+  netif_set_default(&gnetif);
+
+  if (netif_is_link_up(&gnetif))
+  {
+    netif_set_up(&gnetif);
+  }
+  else
+  {
+    netif_set_down(&gnetif);
+  }
+
+  /* Drives DHCP_state / OLED status updates in app_ethernet.c whenever
+   * the link (or DHCP config) changes. */
+  netif_set_link_callback(&gnetif, ethernet_link_status_updated);
+}
 
 /* USER CODE END 4 */
 
