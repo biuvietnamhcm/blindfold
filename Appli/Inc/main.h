@@ -63,6 +63,23 @@ typedef funcptr funcptr_NS;
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
 
+/* Fallback static IPv4 address, used only if DHCP times out
+   (see DHCP_Process() in app_ethernet.c). Adjust to fit your LAN. */
+#define IP_ADDR0   ((uint8_t) 192U)
+#define IP_ADDR1   ((uint8_t) 168U)
+#define IP_ADDR2   ((uint8_t) 0U)
+#define IP_ADDR3   ((uint8_t) 10U)
+
+#define NETMASK_ADDR0   ((uint8_t) 255U)
+#define NETMASK_ADDR1   ((uint8_t) 255U)
+#define NETMASK_ADDR2   ((uint8_t) 255U)
+#define NETMASK_ADDR3   ((uint8_t) 0U)
+
+#define GW_ADDR0   ((uint8_t) 192U)
+#define GW_ADDR1   ((uint8_t) 168U)
+#define GW_ADDR2   ((uint8_t) 0U)
+#define GW_ADDR3   ((uint8_t) 1U)
+
 /* USER CODE END EC */
 
 /* Exported macro ------------------------------------------------------------*/
@@ -74,6 +91,12 @@ typedef funcptr funcptr_NS;
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
+
+/* heth1 and TxConfig are defined in main.c (MX_ETH1_Init). Exposed here so
+   ethernetif.c / app_ethernet.c can use the same instances instead of
+   creating their own. */
+extern ETH_HandleTypeDef heth1;
+extern ETH_TxPacketConfigTypeDef TxConfig;
 
 /* USER CODE END EFP */
 

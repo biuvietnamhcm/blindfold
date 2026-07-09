@@ -155,6 +155,20 @@ SECTIONS
     __enoncacheable = .;  /* create symbol for end of section */
   } > RAM
 
+  /* ETH1 DMA descriptor rings (DMARxDscrTab/DMATxDscrTab in main.c carry an
+   * explicit section attribute for these two names -- give them an explicit
+   * home here instead of leaving GNU ld to guess an orphan-section
+   * placement for them). HAL_ETH_Init() fully populates every descriptor
+   * field itself, so this doesn't need to be zero-loaded -- NOLOAD, same
+   * as ST's own reference linker scripts for this driver. */
+  .eth_descriptors (NOLOAD) :
+  {
+    . = ALIGN(32);
+    KEEP(*(.RxDecripSection))
+    KEEP(*(.TxDecripSection))
+    . = ALIGN(32);
+  } > RAM
+
   .gnu.sgstubs :
   {
     _sNSCVeneer = .;

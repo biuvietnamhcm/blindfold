@@ -109,10 +109,7 @@ int main(void)
   BSP_LED_Init(LED_BLUE);
   BSP_LED_Init(LED_RED);
   BSP_LED_Init(LED_GREEN);
-  for(int i=0; i<6; i++){
-	  BSP_LED_Toggle(LED_BLUE);
-	  HAL_Delay(200);
-  };
+
   /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
 
@@ -128,24 +125,9 @@ int main(void)
   }
 
   /* Launch the application */
+  if (BOOT_OK != BOOT_Application())
   {
-    BOOTStatus_TypeDef bootStatus = BOOT_Application();
-    if (BOOT_OK != bootStatus)
-    {
-      /* DIAGNOSTIC: blink LED_GREEN (bootStatus) times, then pause, forever.
-         1=UNSUPPORTED_MEMORY, 2=NOBASEADDRESS, 3=MAPPEDMODEFAIL, 4=COPY */
-      while (1)
-      {
-        for (int i = 0; i < (int)bootStatus; i++)
-        {
-          BSP_LED_Toggle(LED_GREEN);
-          HAL_Delay(150);
-          BSP_LED_Toggle(LED_GREEN);
-          HAL_Delay(150);
-        }
-        HAL_Delay(1000);
-      }
-    }
+    Error_Handler();
   }
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */

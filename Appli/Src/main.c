@@ -19,11 +19,17 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "string.h"
-#include <stdio.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "sh1106.h"
+#include "lwip/init.h"
+#include "lwip/netif.h"
+#include "lwip/timeouts.h"
+#include "netif/etharp.h"
+#include "ethernetif.h"
+#include "app_ethernet.h"
+#include "net_display.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -68,7 +74,7 @@ ETH_HandleTypeDef heth1;
 I2C_HandleTypeDef hi2c1;
 
 /* USER CODE BEGIN PV */
-
+struct netif gnetif;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -77,7 +83,7 @@ static void MX_ETH1_Init(void);
 static void MX_I2C1_Init(void);
 static void SystemIsolation_Config(void);
 /* USER CODE BEGIN PFP */
-
+static void Netif_Config(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -124,17 +130,18 @@ int main(void)
 
   SH1106_Status oled_status = SH1106_Init(&hi2c1);
 
+  /* Dashboard layout (128x64, 8px rows, no border so every row gets the
+   * full 16-character width):
+   *   y=0  : title (static, drawn once)
+   *   y=16..32 : live network status, owned by net_display.c
+   *   y=48 : uptime counter, owned by the main loop below
+   */
   if (oled_status == SH1106_OK)
   {
     SH1106_Fill(SH1106_COLOR_BLACK);
-    SH1106_DrawRectangle(0, 0, SH1106_WIDTH - 1, SH1106_HEIGHT - 1, SH1106_COLOR_WHITE);
-    SH1106_SetCursor(8, 8);
+    SH1106_SetCursor(0, 0);
     SH1106_WriteString("BlindFold", SH1106_COLOR_WHITE);
-    SH1106_SetCursor(8, 24);
-    SH1106_WriteString("SH1106 OK", SH1106_COLOR_WHITE);
-    SH1106_SetCursor(8, 40);
-    SH1106_WriteString("N657X0-Q", SH1106_COLOR_WHITE);
-    SH1106_UpdateScreen();
+    NetDisplay_ShowStatus("ETH: init...", NULL, NULL);
   }
   else
   {
@@ -149,24 +156,43 @@ int main(void)
     BSP_LED_Off(LED_RED);
   }
   BSP_LED_Toggle(LED_GREEN);
+
+  /* Bring up the TCP/IP stack in NO_SYS (polling) mode -- no RTOS task
+   * services it, the main loop below drives it directly. */
+  lwip_init();
+  Netif_Config();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  uint32_t oled_uptime_s = 0;
-  uint32_t last_tick = HAL_GetTick();
-
   while (1)
   {
+    /* USER CODE END WHILE */
+
     /* USER CODE BEGIN 3 */
+
+    /* Service the network stack. NO_SYS/polling mode: these must be
+     * called often (every loop iteration, not gated behind HAL_Delay)
+     * or incoming frames back up in the RX descriptor ring and DHCP/ARP
+     * timing gets sluggish. */
+    ethernetif_input(&gnetif);
+    sys_check_timeouts();
+#if LWIP_NETIF_LINK_CALLBACK
+    Ethernet_Link_Periodic_Handle(&gnetif);
+#endif
+#if LWIP_DHCP
+    DHCP_Periodic_Handle(&gnetif);
+#endif
+
     if (oled_status == SH1106_OK && (HAL_GetTick() - last_tick) >= 1000)
     {
       last_tick = HAL_GetTick();
       oled_uptime_s++;
 
       char line[16];
-      snprintf(line, sizeof(line), "up: %lus  ", (unsigned long)oled_uptime_s);
-      SH1106_SetCursor(8, 40);
+      snprintf(line, sizeof(line), "up: %lus", (unsigned long)oled_uptime_s);
+      SH1106_FillRectangle(0, 48, SH1106_WIDTH - 1, 48 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
+      SH1106_SetCursor(0, 48);
       SH1106_WriteString(line, SH1106_COLOR_WHITE);
       SH1106_UpdateScreen();
     }
