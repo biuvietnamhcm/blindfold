@@ -321,10 +321,27 @@ static void MX_I2C1_Init(void)
   /*RIMC configuration*/
   RIMC_MasterConfig_t RIMC_master = {0};
   RIMC_master.MasterCID = RIF_CID_1;
-  RIMC_master.SecPriv = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_NPRIV;
+  /* NOTE: was RIF_ATTRIBUTE_NPRIV -- ST's own RIF template for STM32N6
+   * configures the ETH1 DMA master as PRIVILEGED. With NPRIV here, ETH DMA
+   * transactions can be silently fenced by the RIF security fabric: HAL
+   * calls report success and the TX descriptor's OWN bit gets set by
+   * software, but the actual DMA bus transaction to fetch/consume that
+   * descriptor never happens -- nothing reaches the PHY, so nothing ever
+   * reaches the router. This matches ST's own documented STM32N657 ETH DMA
+   * TX-stuck-in-Secure-only-configuration reports. */
+  RIMC_master.SecPriv = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV;
   HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_ETH1, &RIMC_master);
 
   /* RIF-Aware IPs Config */
+
+  /* The ETH1 peripheral's own (slave-side) RIF security attribute was never
+   * set anywhere in this file -- only the master (RIMC) side above and the
+   * GPIO pins below were configured. Left at its reset default, it can end
+   * up mismatched against the master attribute and the Secure memory the
+   * DMA descriptors/buffers live in (see the 0x34100000 placement of
+   * DMARxDscrTab/DMATxDscrTab above), which is exactly the kind of gap that
+   * causes DMA to silently stall instead of erroring out. */
+  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_ETH1, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_NPRIV);
 
   /* set up GPIO configuration */
   HAL_GPIO_ConfigPinAttributes(GPIOA,GPIO_PIN_10,GPIO_PIN_SEC|GPIO_PIN_NPRIV);

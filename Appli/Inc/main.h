@@ -67,8 +67,8 @@ typedef funcptr funcptr_NS;
    (see DHCP_Process() in app_ethernet.c). Adjust to fit your LAN. */
 #define IP_ADDR0   ((uint8_t) 192U)
 #define IP_ADDR1   ((uint8_t) 168U)
-#define IP_ADDR2   ((uint8_t) 0U)
-#define IP_ADDR3   ((uint8_t) 10U)
+#define IP_ADDR2   ((uint8_t) 88U)
+#define IP_ADDR3   ((uint8_t) 125U)
 
 #define NETMASK_ADDR0   ((uint8_t) 255U)
 #define NETMASK_ADDR1   ((uint8_t) 255U)
