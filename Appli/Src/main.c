@@ -410,6 +410,22 @@ static void Netif_Config(void)
   /* Drives DHCP_state / OLED status updates in app_ethernet.c whenever
    * the link (or DHCP config) changes. */
   netif_set_link_callback(&gnetif, ethernet_link_status_updated);
+
+  /* netif_add() -> ethernetif_init() -> low_level_init() already ran
+   * ethernet_link_check_state() above, *before* this callback existed.
+   * If the cable was plugged in before power-up, the PHY link is up by
+   * the time we get here, so netif_set_link_up() already fired-and-was-
+   * ignored (lwIP only calls the callback on an up/down *transition*,
+   * and only if a callback is registered at that moment). Later, the
+   * 100ms periodic check in ethernet_link_check_state() also does
+   * nothing, because as far as it's concerned no transition occurs --
+   * link was already up last time it looked. Net result: the OLED gets
+   * stuck on "ETH: init..." forever and DHCP never starts.
+   *
+   * Fix: manually sync the display/DHCP state machine to whatever the
+   * link state actually is right now, instead of waiting for an edge
+   * that may have already been missed. */
+  ethernet_link_status_updated(&gnetif);
 }
 
 /* USER CODE END 4 */
