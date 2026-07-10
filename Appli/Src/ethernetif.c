@@ -318,6 +318,31 @@ int32_t ETH_PHY_IO_GetTick(void)
 }
 
 /**
+  * @brief  Check whether the LAN8742 is actually answering on MDIO.
+  *         A non-responding PHY (unpowered, still in reset, wrong
+  *         address, or nobody driving the bus) reads back all-1s --
+  *         BSR == 0xFFFF. LAN8742_GetLinkState() has no way to tell that
+  *         apart from a real response: LINK_STATUS, AUTONEGO_EN and
+  *         AUTONEGO_DONE are all "set" when every bit is 1, so it
+  *         decodes straight through to a false LAN8742_STATUS_10MBITS_
+  *         HALFDUPLEX instead of an error. Call this first and only
+  *         trust GetLinkState()'s result if it returns 1.
+  * @retval 1 if the PHY answered with something other than the all-1s
+  *         pattern, 0 if it didn't (or the MDIO read itself failed).
+  */
+static uint8_t ethernet_phy_is_responding(void)
+{
+  uint32_t bsr = 0;
+
+  if (ETH_PHY_IO_ReadReg(LAN8742.DevAddr, LAN8742_BSR, &bsr) < 0)
+  {
+    return 0U;
+  }
+
+  return ((bsr & 0xFFFFU) != 0xFFFFU) ? 1U : 0U;
+}
+
+/**
   * @brief  Poll the PHY link state and (re)start/stop the MAC/DMA to match.
   *         Called from Ethernet_Link_Periodic_Handle() (app_ethernet.c).
   */
@@ -327,7 +352,11 @@ void ethernet_link_check_state(struct netif *netif)
   int32_t PHYLinkState = 0;
   uint32_t linkchanged = 0U, speed = 0U, duplex = 0U;
 
-  PHYLinkState = LAN8742_GetLinkState(&LAN8742);
+  /* Guard against the non-responding-PHY false-positive described above --
+   * without this, PHYLinkState can never come back LINK_DOWN/error, so a
+   * netif that's ever gone "up" can never come back down. */
+  PHYLinkState = ethernet_phy_is_responding() ? LAN8742_GetLinkState(&LAN8742)
+                                               : LAN8742_STATUS_READ_ERROR;
 
   if (netif_is_link_up(netif) && (PHYLinkState <= LAN8742_STATUS_LINK_DOWN))
   {
@@ -377,39 +406,58 @@ void ethernet_link_check_state(struct netif *netif)
 }
 
 /**
-  * @brief  TEMP DEBUG. Reads the LAN8742's address + raw BSR register +
-  *         the decoded link-state code straight from the PHY (bypassing
-  *         all the netif/lwIP bookkeeping) and prints it to the OLED
-  *         debug row. This tells us whether a "link up while unplugged"
-  *         symptom is:
-  *           - a bad/floating MDIO read (DevAddr looks wrong, e.g. not
-  *             0 or 1, or BSR reads back as 0xFFFF -- classic "nobody
-  *             answered on this address" pattern), or
-  *           - a genuinely-set LINK_STATUS bit (BSR bit2, i.e. BSR &
-  *             0x0004), which would point at the PHY/board itself
-  *             rather than the driver.
-  *         Call this often (e.g. every 200-300ms) from the main loop
-  *         and watch the row live while you plug/unplug the cable.
+  * @brief  Show a human-readable LAN connection status on the OLED debug
+  *         row (y=40). Was originally a raw PHY-register dump used to
+  *         chase a "link up while unplugged" bug; root cause was a
+  *         non-responding PHY decoding as a false link-up (see
+  *         ethernet_phy_is_responding()). Now shows:
+  *           - "LAN:NO RESP xxxx" if the PHY isn't answering on MDIO at
+  *             all (xxxx is the raw BSR read, kept for reference -- it
+  *             should stop reading FFFF once the non-response is fixed)
+  *           - "LAN:DOWN" / "LAN:NEGOTIATING" if the PHY responds but
+  *             reports no cable / autonegotiation still in progress
+  *           - "LAN:UP <speed>-<duplex>" if the link is genuinely up
+  *         Call periodically from the main loop (e.g. every 200-300ms).
   */
 void ethernet_phy_debug_print(void)
 {
-  uint32_t bsr = 0;
-  int32_t phy_status;
   char line[17];
 
-  /* Raw register read, not the cached/latched value GetLinkState()
-   * uses internally -- read it twice back-to-back like the driver
-   * does, since BSR bit2 is latching-low on some reads. */
-  (void)ETH_PHY_IO_ReadReg(LAN8742.DevAddr, LAN8742_BSR, &bsr);
-  (void)ETH_PHY_IO_ReadReg(LAN8742.DevAddr, LAN8742_BSR, &bsr);
+  if (!ethernet_phy_is_responding())
+  {
+    uint32_t bsr = 0;
+    (void)ETH_PHY_IO_ReadReg(LAN8742.DevAddr, LAN8742_BSR, &bsr);
+    snprintf(line, sizeof(line), "LAN:NO RESP %04lX", (unsigned long)(bsr & 0xFFFFU));
+  }
+  else
+  {
+    int32_t phy_status = LAN8742_GetLinkState(&LAN8742);
 
-  phy_status = LAN8742_GetLinkState(&LAN8742);
-
-  /* addr:BSR-hex:decoded-status, e.g. "A0 B:782D S:1" */
-  snprintf(line, sizeof(line), "A%lu B:%04lX S:%ld",
-           (unsigned long)LAN8742.DevAddr,
-           (unsigned long)(bsr & 0xFFFFU),
-           (long)phy_status);
+    switch (phy_status)
+    {
+      case LAN8742_STATUS_100MBITS_FULLDUPLEX:
+        snprintf(line, sizeof(line), "LAN:UP 100M-FD");
+        break;
+      case LAN8742_STATUS_100MBITS_HALFDUPLEX:
+        snprintf(line, sizeof(line), "LAN:UP 100M-HD");
+        break;
+      case LAN8742_STATUS_10MBITS_FULLDUPLEX:
+        snprintf(line, sizeof(line), "LAN:UP 10M-FD");
+        break;
+      case LAN8742_STATUS_10MBITS_HALFDUPLEX:
+        snprintf(line, sizeof(line), "LAN:UP 10M-HD");
+        break;
+      case LAN8742_STATUS_LINK_DOWN:
+        snprintf(line, sizeof(line), "LAN:DOWN");
+        break;
+      case LAN8742_STATUS_AUTONEGO_NOTDONE:
+        snprintf(line, sizeof(line), "LAN:NEGOTIATING");
+        break;
+      default:
+        snprintf(line, sizeof(line), "LAN:ERR %ld", (long)phy_status);
+        break;
+    }
+  }
 
   NetDisplay_ShowDebug(line);
 }

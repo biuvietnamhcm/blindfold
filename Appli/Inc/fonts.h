@@ -7,6 +7,10 @@
   *          character = 8 columns. Each byte is one column, bit0 = top
   *          pixel of that column, bit7 = bottom pixel (matches the
   *          page/column layout used by SH1106 GDDRAM).
+  *
+  *          Glyph data is the public-domain "font8x8_basic" bitmap font
+  *          (IBM/VGA ROM heritage), chosen for clean, unambiguous strokes
+  *          at 8x8 on a 1-bit OLED. See fonts.c for provenance details.
   ******************************************************************************
   */
 #ifndef FONTS_H
