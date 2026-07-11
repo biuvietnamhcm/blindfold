@@ -351,6 +351,30 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE BEGIN RIF_Init 1 */
 
+  /* CubeMX regenerates the block above with RIF_ATTRIBUTE_NPRIV and no
+   * slave-side call every time "Generate Code" runs -- that's what
+   * silently happened here. Re-applying both fixes inside this USER
+   * CODE block means they survive the next regeneration instead of
+   * quietly disappearing again.
+   *
+   * (1) ETH1 DMA master needs PRIVILEGED, not NPRIV: with NPRIV, ETH
+   * DMA transactions can be silently fenced by the RIF security fabric
+   * -- HAL calls report success and the TX descriptor's OWN bit gets
+   * set by software, but the actual DMA bus transaction to fetch/
+   * consume that descriptor never happens, so nothing reaches the PHY.
+   */
+  RIMC_master.SecPriv = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV;
+  HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_ETH1, &RIMC_master);
+
+  /* (2) ETH1's own (slave-side) RIF security attribute is never set by
+   * the generated block above -- only the master (RIMC) side and the
+   * GPIO pins are. Left at its reset default, it can end up mismatched
+   * against the master attribute and the Secure memory the DMA
+   * descriptors/buffers live in (see the 0x34100000 placement of
+   * DMARxDscrTab/DMATxDscrTab), which is exactly the kind of gap that
+   * causes DMA to silently stall instead of erroring out. */
+  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_ETH1, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_NPRIV);
+
   /* USER CODE END RIF_Init 1 */
   /* USER CODE BEGIN RIF_Init 2 */
 

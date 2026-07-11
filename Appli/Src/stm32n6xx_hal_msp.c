@@ -125,14 +125,36 @@ void HAL_ETH_MspInit(ETH_HandleTypeDef* heth)
     PF11     ------> ETH1_RMII_TX_EN
     PF13     ------> ETH1_RMII_TXD1
     PF12     ------> ETH1_RMII_TXD0
+    PF4      ------> ETH1_MDIO
     */
     GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_7|GPIO_PIN_5|GPIO_PIN_15
-                          |GPIO_PIN_14|GPIO_PIN_11|GPIO_PIN_13|GPIO_PIN_12;
+                          |GPIO_PIN_14|GPIO_PIN_11|GPIO_PIN_13|GPIO_PIN_12
+                          |GPIO_PIN_4;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Alternate = GPIO_AF11_ETH1;
     HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
+
+    /* CubeMX's regeneration after the MDC/MDIO pin move only emitted the
+     * GPIOF block above (correctly picking up PF4) but dropped PG11
+     * entirely -- the .ioc says ETH1_MDC is on PG11, this file never
+     * configures it. Added by hand below; GPIO_AF12_ETH1 is inferred
+     * (it's the only other ETH1 AF macro in this HAL, and AF11 is
+     * already spoken for by the pins above) rather than confirmed --
+     * open this pin in CubeMX's Pinout view and check the alternate
+     * function it reports before trusting this if the link still
+     * doesn't come up. */
+    __HAL_RCC_GPIOG_CLK_ENABLE();
+    /**ETH1 GPIO Configuration
+    PG11     ------> ETH1_MDC
+    */
+    GPIO_InitStruct.Pin = GPIO_PIN_11;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Alternate = GPIO_AF12_ETH1;
+    HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
 
     /* USER CODE BEGIN ETH1_MspInit 1 */
 
@@ -170,9 +192,16 @@ void HAL_ETH_MspDeInit(ETH_HandleTypeDef* heth)
     PF11     ------> ETH1_RMII_TX_EN
     PF13     ------> ETH1_RMII_TXD1
     PF12     ------> ETH1_RMII_TXD0
+    PF4      ------> ETH1_MDIO
     */
     HAL_GPIO_DeInit(GPIOF, GPIO_PIN_10|GPIO_PIN_7|GPIO_PIN_5|GPIO_PIN_15
-                          |GPIO_PIN_14|GPIO_PIN_11|GPIO_PIN_13|GPIO_PIN_12);
+                          |GPIO_PIN_14|GPIO_PIN_11|GPIO_PIN_13|GPIO_PIN_12
+                          |GPIO_PIN_4);
+
+    /**ETH1 GPIO Configuration
+    PG11     ------> ETH1_MDC
+    */
+    HAL_GPIO_DeInit(GPIOG, GPIO_PIN_11);
 
     /* USER CODE BEGIN ETH1_MspDeInit 1 */
 
