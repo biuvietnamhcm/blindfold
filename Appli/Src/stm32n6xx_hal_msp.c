@@ -139,12 +139,19 @@ void HAL_ETH_MspInit(ETH_HandleTypeDef* heth)
     /* CubeMX's regeneration after the MDC/MDIO pin move only emitted the
      * GPIOF block above (correctly picking up PF4) but dropped PG11
      * entirely -- the .ioc says ETH1_MDC is on PG11, this file never
-     * configures it. Added by hand below; GPIO_AF12_ETH1 is inferred
-     * (it's the only other ETH1 AF macro in this HAL, and AF11 is
-     * already spoken for by the pins above) rather than confirmed --
-     * open this pin in CubeMX's Pinout view and check the alternate
-     * function it reports before trusting this if the link still
-     * doesn't come up. */
+     * configures it. Added by hand below.
+     *
+     * Confirmed against ST's own CubeMX-generated msp for this exact
+     * board (STM32CubeN6, Projects/NUCLEO-N657X0-Q/Applications/NetXDuo/
+     * Nx_TCP_Echo_Client) and against a third-party STM32N6 driver
+     * targeting NUCLEO-N657X0-Q (Oryx Embedded CycloneTCP): PG11 uses
+     * GPIO_AF11_ETH1, the same AF as every other RMII/MDIO pin on
+     * GPIOF -- not AF12. AF12 was the earlier guess and is what left
+     * MDC undriven: with no valid clock reaching the LAN8742, every
+     * MDIO read comes back as the all-1s non-responding pattern
+     * (ethernet_phy_is_responding() correctly refuses to trust that as
+     * a real link state), so the link can only ever report DOWN no
+     * matter what's plugged into the RJ45 jack. */
     __HAL_RCC_GPIOG_CLK_ENABLE();
     /**ETH1 GPIO Configuration
     PG11     ------> ETH1_MDC
@@ -153,7 +160,7 @@ void HAL_ETH_MspInit(ETH_HandleTypeDef* heth)
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    GPIO_InitStruct.Alternate = GPIO_AF12_ETH1;
+    GPIO_InitStruct.Alternate = GPIO_AF11_ETH1;
     HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
 
     /* USER CODE BEGIN ETH1_MspInit 1 */
