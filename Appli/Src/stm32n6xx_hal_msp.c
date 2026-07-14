@@ -136,34 +136,39 @@ void HAL_ETH_MspInit(ETH_HandleTypeDef* heth)
     GPIO_InitStruct.Alternate = GPIO_AF11_ETH1;
     HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
 
-    /* CubeMX's regeneration after the MDC/MDIO pin move only emitted the
-     * GPIOF block above (correctly picking up PF4) but dropped PG11
-     * entirely -- the .ioc says ETH1_MDC is on PG11, this file never
-     * configures it. Added by hand below.
+    /* USER CODE BEGIN ETH1_MspInit 1 */
+
+    /* CubeMX's generator for this STM32N6/NUCLEO-N657X0-Q combo does not
+     * emit a GPIOG block for ETH1_MDC (PG11) here, even though the .ioc
+     * has PG11.Signal=ETH1_MDC set -- confirmed dropped across at least
+     * one prior "Generate Code" run. Kept inside this USER CODE block
+     * (rather than loose in the auto-generated section above) so it
+     * survives every future regeneration instead of silently
+     * disappearing again.
      *
-     * Confirmed against ST's own CubeMX-generated msp for this exact
-     * board (STM32CubeN6, Projects/NUCLEO-N657X0-Q/Applications/NetXDuo/
-     * Nx_TCP_Echo_Client) and against a third-party STM32N6 driver
-     * targeting NUCLEO-N657X0-Q (Oryx Embedded CycloneTCP): PG11 uses
-     * GPIO_AF11_ETH1, the same AF as every other RMII/MDIO pin on
-     * GPIOF -- not AF12. AF12 was the earlier guess and is what left
-     * MDC undriven: with no valid clock reaching the LAN8742, every
-     * MDIO read comes back as the all-1s non-responding pattern
+     * AF11, not AF12: same alternate function as every other RMII/MDIO
+     * pin on GPIOF above. Confirmed against ST's own CubeMX-generated
+     * msp for this exact board (STM32CubeN6, Projects/NUCLEO-N657X0-Q/
+     * Applications/NetXDuo/Nx_TCP_Echo_Client) and against a third-party
+     * STM32N6 driver targeting NUCLEO-N657X0-Q (Oryx Embedded
+     * CycloneTCP). AF12 was the earlier guess and left MDC undriven:
+     * with no valid clock reaching the LAN8742, every MDIO read comes
+     * back as the all-1s non-responding pattern
      * (ethernet_phy_is_responding() correctly refuses to trust that as
-     * a real link state), so the link can only ever report DOWN no
-     * matter what's plugged into the RJ45 jack. */
+     * a real link state), so the link could only ever report DOWN no
+     * matter what was plugged into the RJ45 jack.
+     *
+     * If a future CubeMX/CubeIDE version starts generating this block
+     * correctly on its own, this USER CODE copy will just be redundant
+     * (harmless -- HAL_GPIO_Init on the same pin twice with the same
+     * settings), not conflicting. */
     __HAL_RCC_GPIOG_CLK_ENABLE();
-    /**ETH1 GPIO Configuration
-    PG11     ------> ETH1_MDC
-    */
     GPIO_InitStruct.Pin = GPIO_PIN_11;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Alternate = GPIO_AF11_ETH1;
     HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
-
-    /* USER CODE BEGIN ETH1_MspInit 1 */
 
     /* USER CODE END ETH1_MspInit 1 */
 
@@ -205,12 +210,13 @@ void HAL_ETH_MspDeInit(ETH_HandleTypeDef* heth)
                           |GPIO_PIN_14|GPIO_PIN_11|GPIO_PIN_13|GPIO_PIN_12
                           |GPIO_PIN_4);
 
-    /**ETH1 GPIO Configuration
-    PG11     ------> ETH1_MDC
-    */
-    HAL_GPIO_DeInit(GPIOG, GPIO_PIN_11);
-
     /* USER CODE BEGIN ETH1_MspDeInit 1 */
+
+    /* Counterpart of the USER CODE block in HAL_ETH_MspInit() above --
+     * PG11 (ETH1_MDC) de-init kept here for the same reason: CubeMX's
+     * generator doesn't reliably emit this GPIOG line on its own, so it
+     * lives in USER CODE instead of the auto-generated section. */
+    HAL_GPIO_DeInit(GPIOG, GPIO_PIN_11);
 
     /* USER CODE END ETH1_MspDeInit 1 */
   }
