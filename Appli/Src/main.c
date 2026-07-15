@@ -70,9 +70,13 @@ ETH_TxPacketConfigTypeDef TxConfig;
 
 COM_InitTypeDef BspCOMInit;
 
+DCMIPP_HandleTypeDef hdcmipp;
+
 ETH_HandleTypeDef heth1;
 
 I2C_HandleTypeDef hi2c1;
+
+JPEG_HandleTypeDef hjpeg;
 
 /* USER CODE BEGIN PV */
 struct netif gnetif;
@@ -82,6 +86,8 @@ struct netif gnetif;
 static void MX_GPIO_Init(void);
 static void MX_ETH1_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_DCMIPP_Init(void);
+static void MX_JPEG_Init(void);
 static void SystemIsolation_Config(void);
 /* USER CODE BEGIN PFP */
 static void Netif_Config(void);
@@ -108,7 +114,9 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
+  BSP_LED_Init(LED_RED);
+  BSP_LED_Init(LED_GREEN);
+  BSP_LED_Init(LED_BLUE);
   /* USER CODE END Init */
 
   /* USER CODE BEGIN SysInit */
@@ -119,11 +127,10 @@ int main(void)
   MX_GPIO_Init();
   MX_ETH1_Init();
   MX_I2C1_Init();
+  MX_DCMIPP_Init();
+  MX_JPEG_Init();
   SystemIsolation_Config();
   /* USER CODE BEGIN 2 */
-  BSP_LED_Init(LED_RED);
-  BSP_LED_Init(LED_GREEN);
-  BSP_LED_Init(LED_BLUE);
 
   for(int i = 0; i < 10; i++){
     BSP_LED_Toggle(LED_BLUE);
@@ -211,6 +218,61 @@ int main(void)
     }
   }
   /* USER CODE END 3 */
+}
+
+/**
+  * @brief DCMIPP Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_DCMIPP_Init(void)
+{
+
+  /* USER CODE BEGIN DCMIPP_Init 0 */
+
+  /* USER CODE END DCMIPP_Init 0 */
+
+  DCMIPP_ParallelConfTypeDef pParallelConfig = {0};
+  DCMIPP_PipeConfTypeDef pPipeConfig = {0};
+
+  /* USER CODE BEGIN DCMIPP_Init 1 */
+
+  /* USER CODE END DCMIPP_Init 1 */
+  hdcmipp.Instance = DCMIPP;
+  if (HAL_DCMIPP_Init(&hdcmipp) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Parallel Config
+  */
+  pParallelConfig.SynchroCodes.FrameEndCode = 0;
+  pParallelConfig.SynchroCodes.FrameStartCode = 0;
+  pParallelConfig.SynchroCodes.LineEndCode = 0;
+  pParallelConfig.SynchroCodes.LineStartCode = 0;
+  pParallelConfig.PCKPolarity = DCMIPP_PCKPOLARITY_FALLING;
+  pParallelConfig.HSPolarity = DCMIPP_HSPOLARITY_LOW ;
+  pParallelConfig.VSPolarity = DCMIPP_VSPOLARITY_LOW;
+  pParallelConfig.ExtendedDataMode = DCMIPP_INTERFACE_8BITS;
+  pParallelConfig.Format = DCMIPP_FORMAT_MONOCHROME_8B;
+  pParallelConfig.SwapBits = DCMIPP_SWAPBITS_DISABLE;
+  pParallelConfig.SwapCycles = DCMIPP_SWAPCYCLES_DISABLE;
+  pParallelConfig.SynchroMode = DCMIPP_SYNCHRO_EMBEDDED;
+  HAL_DCMIPP_PARALLEL_SetConfig(&hdcmipp, &pParallelConfig);
+
+  /** Pipe 1 Config
+  */
+  pPipeConfig.FrameRate = DCMIPP_FRAME_RATE_ALL;
+  pPipeConfig.PixelPipePitch = 10;
+  pPipeConfig.PixelPackerFormat = DCMIPP_PIXEL_PACKER_FORMAT_RGB565_1;
+  if (HAL_DCMIPP_PIPE_SetConfig(&hdcmipp, DCMIPP_PIPE1, &pPipeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN DCMIPP_Init 2 */
+
+  /* USER CODE END DCMIPP_Init 2 */
+
 }
 
 /**
@@ -314,6 +376,32 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief JPEG Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_JPEG_Init(void)
+{
+
+  /* USER CODE BEGIN JPEG_Init 0 */
+
+  /* USER CODE END JPEG_Init 0 */
+
+  /* USER CODE BEGIN JPEG_Init 1 */
+
+  /* USER CODE END JPEG_Init 1 */
+  hjpeg.Instance = JPEG;
+  if (HAL_JPEG_Init(&hjpeg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN JPEG_Init 2 */
+
+  /* USER CODE END JPEG_Init 2 */
+
+}
+
+/**
   * @brief RIF Initialization Function
   * @param None
   * @retval None
@@ -332,6 +420,8 @@ static void MX_I2C1_Init(void)
   RIMC_MasterConfig_t RIMC_master = {0};
   RIMC_master.MasterCID = RIF_CID_1;
   RIMC_master.SecPriv = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_NPRIV;
+  HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_DCMIPP, &RIMC_master);
+
   HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_ETH1, &RIMC_master);
 
   /* RIF-Aware IPs Config */
@@ -346,7 +436,16 @@ static void MX_I2C1_Init(void)
   HAL_GPIO_ConfigPinAttributes(GPIOB,GPIO_PIN_10,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOB,GPIO_PIN_11,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOC,GPIO_PIN_1,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(GPIOC,GPIO_PIN_5,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(GPIOC,GPIO_PIN_6,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(GPIOD,GPIO_PIN_5,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(GPIOD,GPIO_PIN_7,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOE,GPIO_PIN_3,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(GPIOE,GPIO_PIN_4,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(GPIOE,GPIO_PIN_8,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(GPIOE,GPIO_PIN_10,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(GPIOF,GPIO_PIN_1,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(GPIOG,GPIO_PIN_2,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOH,GPIO_PIN_9,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
 
   /* USER CODE BEGIN RIF_Init 1 */
@@ -395,8 +494,11 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
+  __HAL_RCC_GPIOG_CLK_ENABLE();
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 

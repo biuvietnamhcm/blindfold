@@ -74,9 +74,139 @@ void HAL_MspInit(void)
 
   HAL_PWREx_EnableVddIO4();
 
+  HAL_PWREx_EnableVddIO5();
+
   /* USER CODE BEGIN MspInit 1 */
 
   /* USER CODE END MspInit 1 */
+}
+
+/**
+  * @brief DCMIPP MSP Initialization
+  * This function configures the hardware resources used in this example
+  * @param hdcmipp: DCMIPP handle pointer
+  * @retval None
+  */
+void HAL_DCMIPP_MspInit(DCMIPP_HandleTypeDef* hdcmipp)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
+  if(hdcmipp->Instance==DCMIPP)
+  {
+    /* USER CODE BEGIN DCMIPP_MspInit 0 */
+
+    /* USER CODE END DCMIPP_MspInit 0 */
+
+  /** Initializes the peripherals clock
+  */
+    PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_DCMIPP|RCC_PERIPHCLK_CSI;
+    PeriphClkInitStruct.DcmippClockSelection = RCC_DCMIPPCLKSOURCE_PCLK5;
+    PeriphClkInitStruct.ICSelection[RCC_IC18].ClockSelection = RCC_ICCLKSOURCE_PLL4;
+    PeriphClkInitStruct.ICSelection[RCC_IC18].ClockDivider = 1;
+    if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
+    {
+      Error_Handler();
+    }
+
+    /* Peripheral clock enable */
+    __HAL_RCC_DCMIPP_CLK_ENABLE();
+
+    __HAL_RCC_GPIOE_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+    __HAL_RCC_GPIOF_CLK_ENABLE();
+    __HAL_RCC_GPIOG_CLK_ENABLE();
+    /**DCMIPP GPIO Configuration
+    PE8     ------> DCMIPP_D4
+    PC6     ------> DCMIPP_D1
+    PC5     ------> DCMIPP_D2
+    PE10     ------> DCMIPP_D3
+    PE4     ------> DCMIPP_D5
+    PD5     ------> DCMIPP_PIXCLK
+    PD7     ------> DCMIPP_D0
+    PF1     ------> DCMIPP_D7
+    PG2     ------> DCMIPP_D6
+    */
+    GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_10|GPIO_PIN_4;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Alternate = GPIO_AF9_DCMIPP;
+    HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_5;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Alternate = GPIO_AF9_DCMIPP;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_5|GPIO_PIN_7;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Alternate = GPIO_AF9_DCMIPP;
+    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_1;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Alternate = GPIO_AF9_DCMIPP;
+    HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_2;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Alternate = GPIO_AF9_DCMIPP;
+    HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
+
+    /* USER CODE BEGIN DCMIPP_MspInit 1 */
+
+    /* USER CODE END DCMIPP_MspInit 1 */
+
+  }
+
+}
+
+/**
+  * @brief DCMIPP MSP De-Initialization
+  * This function freeze the hardware resources used in this example
+  * @param hdcmipp: DCMIPP handle pointer
+  * @retval None
+  */
+void HAL_DCMIPP_MspDeInit(DCMIPP_HandleTypeDef* hdcmipp)
+{
+  if(hdcmipp->Instance==DCMIPP)
+  {
+    /* USER CODE BEGIN DCMIPP_MspDeInit 0 */
+
+    /* USER CODE END DCMIPP_MspDeInit 0 */
+    /* Peripheral clock disable */
+    __HAL_RCC_DCMIPP_CLK_DISABLE();
+
+    /**DCMIPP GPIO Configuration
+    PE8     ------> DCMIPP_D4
+    PC6     ------> DCMIPP_D1
+    PC5     ------> DCMIPP_D2
+    PE10     ------> DCMIPP_D3
+    PE4     ------> DCMIPP_D5
+    PD5     ------> DCMIPP_PIXCLK
+    PD7     ------> DCMIPP_D0
+    PF1     ------> DCMIPP_D7
+    PG2     ------> DCMIPP_D6
+    */
+    HAL_GPIO_DeInit(GPIOE, GPIO_PIN_8|GPIO_PIN_10|GPIO_PIN_4);
+
+    HAL_GPIO_DeInit(GPIOC, GPIO_PIN_6|GPIO_PIN_5);
+
+    HAL_GPIO_DeInit(GPIOD, GPIO_PIN_5|GPIO_PIN_7);
+
+    HAL_GPIO_DeInit(GPIOF, GPIO_PIN_1);
+
+    HAL_GPIO_DeInit(GPIOG, GPIO_PIN_2);
+
+    /* USER CODE BEGIN DCMIPP_MspDeInit 1 */
+
+    /* USER CODE END DCMIPP_MspDeInit 1 */
+  }
+
 }
 
 /**
@@ -116,7 +246,9 @@ void HAL_ETH_MspInit(ETH_HandleTypeDef* heth)
     __HAL_RCC_ETH1RX_CLK_ENABLE();
 
     __HAL_RCC_GPIOF_CLK_ENABLE();
+    __HAL_RCC_GPIOG_CLK_ENABLE();
     /**ETH1 GPIO Configuration
+    PF4     ------> ETH1_MDIO
     PF10     ------> ETH1_RMII_CRS_DV
     PF7     ------> ETH1_RMII_REF_CLK
     PF5     ------> ETH1_CLK
@@ -125,16 +257,23 @@ void HAL_ETH_MspInit(ETH_HandleTypeDef* heth)
     PF11     ------> ETH1_RMII_TX_EN
     PF13     ------> ETH1_RMII_TXD1
     PF12     ------> ETH1_RMII_TXD0
-    PF4      ------> ETH1_MDIO
+    PG11     ------> ETH1_MDC
     */
-    GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_7|GPIO_PIN_5|GPIO_PIN_15
-                          |GPIO_PIN_14|GPIO_PIN_11|GPIO_PIN_13|GPIO_PIN_12
-                          |GPIO_PIN_4;
+    GPIO_InitStruct.Pin = GPIO_PIN_4|GPIO_PIN_10|GPIO_PIN_7|GPIO_PIN_5
+                          |GPIO_PIN_15|GPIO_PIN_14|GPIO_PIN_11|GPIO_PIN_13
+                          |GPIO_PIN_12;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Alternate = GPIO_AF11_ETH1;
     HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_11;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Alternate = GPIO_AF11_ETH1;
+    HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
 
     /* USER CODE BEGIN ETH1_MspInit 1 */
 
@@ -196,6 +335,7 @@ void HAL_ETH_MspDeInit(ETH_HandleTypeDef* heth)
     __HAL_RCC_ETH1RX_CLK_DISABLE();
 
     /**ETH1 GPIO Configuration
+    PF4     ------> ETH1_MDIO
     PF10     ------> ETH1_RMII_CRS_DV
     PF7     ------> ETH1_RMII_REF_CLK
     PF5     ------> ETH1_CLK
@@ -204,11 +344,13 @@ void HAL_ETH_MspDeInit(ETH_HandleTypeDef* heth)
     PF11     ------> ETH1_RMII_TX_EN
     PF13     ------> ETH1_RMII_TXD1
     PF12     ------> ETH1_RMII_TXD0
-    PF4      ------> ETH1_MDIO
+    PG11     ------> ETH1_MDC
     */
-    HAL_GPIO_DeInit(GPIOF, GPIO_PIN_10|GPIO_PIN_7|GPIO_PIN_5|GPIO_PIN_15
-                          |GPIO_PIN_14|GPIO_PIN_11|GPIO_PIN_13|GPIO_PIN_12
-                          |GPIO_PIN_4);
+    HAL_GPIO_DeInit(GPIOF, GPIO_PIN_4|GPIO_PIN_10|GPIO_PIN_7|GPIO_PIN_5
+                          |GPIO_PIN_15|GPIO_PIN_14|GPIO_PIN_11|GPIO_PIN_13
+                          |GPIO_PIN_12);
+
+    HAL_GPIO_DeInit(GPIOG, GPIO_PIN_11);
 
     /* USER CODE BEGIN ETH1_MspDeInit 1 */
 
@@ -305,6 +447,51 @@ void HAL_I2C_MspDeInit(I2C_HandleTypeDef* hi2c)
     /* USER CODE BEGIN I2C1_MspDeInit 1 */
 
     /* USER CODE END I2C1_MspDeInit 1 */
+  }
+
+}
+
+/**
+  * @brief JPEG MSP Initialization
+  * This function configures the hardware resources used in this example
+  * @param hjpeg: JPEG handle pointer
+  * @retval None
+  */
+void HAL_JPEG_MspInit(JPEG_HandleTypeDef* hjpeg)
+{
+  if(hjpeg->Instance==JPEG)
+  {
+    /* USER CODE BEGIN JPEG_MspInit 0 */
+
+    /* USER CODE END JPEG_MspInit 0 */
+    /* Peripheral clock enable */
+    __HAL_RCC_JPEG_CLK_ENABLE();
+    /* USER CODE BEGIN JPEG_MspInit 1 */
+
+    /* USER CODE END JPEG_MspInit 1 */
+
+  }
+
+}
+
+/**
+  * @brief JPEG MSP De-Initialization
+  * This function freeze the hardware resources used in this example
+  * @param hjpeg: JPEG handle pointer
+  * @retval None
+  */
+void HAL_JPEG_MspDeInit(JPEG_HandleTypeDef* hjpeg)
+{
+  if(hjpeg->Instance==JPEG)
+  {
+    /* USER CODE BEGIN JPEG_MspDeInit 0 */
+
+    /* USER CODE END JPEG_MspDeInit 0 */
+    /* Peripheral clock disable */
+    __HAL_RCC_JPEG_CLK_DISABLE();
+    /* USER CODE BEGIN JPEG_MspDeInit 1 */
+
+    /* USER CODE END JPEG_MspDeInit 1 */
   }
 
 }

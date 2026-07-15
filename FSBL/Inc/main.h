@@ -78,10 +78,6 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define I2C1_SDA_Pin GPIO_PIN_1
-#define I2C1_SDA_GPIO_Port GPIOC
-#define I2CA_SCL_Pin GPIO_PIN_9
-#define I2CA_SCL_GPIO_Port GPIOH
 #define TRACED1_Pin GPIO_PIN_0
 #define TRACED1_GPIO_Port GPIOB
 #define TRACED3_Pin GPIO_PIN_7
@@ -122,8 +118,6 @@ void Error_Handler(void);
 #define SWDIO_GPIO_Port GPIOA
 #define I2C2_SCL_Pin GPIO_PIN_10
 #define I2C2_SCL_GPIO_Port GPIOB
-#define SWO_Pin GPIO_PIN_5
-#define SWO_GPIO_Port GPIOB
 #define OCTOSPI_IO6_Pin GPIO_PIN_10
 #define OCTOSPI_IO6_GPIO_Port GPION
 #define OCTOSPI_IO7_Pin GPIO_PIN_11

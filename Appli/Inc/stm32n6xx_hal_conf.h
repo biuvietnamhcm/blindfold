@@ -39,7 +39,7 @@ extern "C" {
 /*#define HAL_CRC_MODULE_ENABLED   */
 /*#define HAL_CRYP_MODULE_ENABLED   */
 /*#define HAL_DCMI_MODULE_ENABLED   */
-/*#define HAL_DCMIPP_MODULE_ENABLED   */
+#define HAL_DCMIPP_MODULE_ENABLED
 /*#define HAL_DMA2D_MODULE_ENABLED   */
 /*#define HAL_DTS_MODULE_ENABLED   */
 #define HAL_ETH_MODULE_ENABLED
@@ -55,7 +55,7 @@ extern "C" {
 /*#define HAL_ICACHE_MODULE_ENABLED   */
 /*#define HAL_IRDA_MODULE_ENABLED   */
 /*#define HAL_IWDG_MODULE_ENABLED   */
-/*#define HAL_JPEG_MODULE_ENABLED   */
+#define HAL_JPEG_MODULE_ENABLED
 /*#define HAL_LPTIM_MODULE_ENABLED   */
 /*#define HAL_LTDC_MODULE_ENABLED   */
 /*#define HAL_MCE_MODULE_ENABLED   */
