@@ -90,8 +90,6 @@ void Error_Handler(void);
 #define TRACED0_GPIO_Port GPIOE
 #define OCTOSPI_IO2_Pin GPIO_PIN_4
 #define OCTOSPI_IO2_GPIO_Port GPION
-#define I2C2_SDA_Pin GPIO_PIN_11
-#define I2C2_SDA_GPIO_Port GPIOB
 #define JTDI_Pin GPIO_PIN_15
 #define JTDI_GPIO_Port GPIOA
 #define OCTOSPI_CLK_Pin GPIO_PIN_6
@@ -116,8 +114,6 @@ void Error_Handler(void);
 #define OCTOSPI_IO0_GPIO_Port GPION
 #define SWDIO_Pin GPIO_PIN_13
 #define SWDIO_GPIO_Port GPIOA
-#define I2C2_SCL_Pin GPIO_PIN_10
-#define I2C2_SCL_GPIO_Port GPIOB
 #define OCTOSPI_IO6_Pin GPIO_PIN_10
 #define OCTOSPI_IO6_GPIO_Port GPION
 #define OCTOSPI_IO7_Pin GPIO_PIN_11
