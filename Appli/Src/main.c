@@ -307,17 +307,12 @@ static void MX_DCMIPP_Init(void)
   }
   /* USER CODE BEGIN DCMIPP_Init 2 */
 
-  /* Good news: this is CSI now, not parallel -- fixed at the CubeMX
-   * level since last time. What's generated above still doesn't match
-   * the OV5647 (2-lane MIPI CSI-2, RAW8 Bayer, no on-sensor ISP) in five
-   * places though: 1 data lane instead of 2, YUV420 8-bit instead of
-   * RAW8, 6 bits/pixel instead of 8, an 80 Mbps/lane PHY bitrate that
-   * looks like a placeholder, and a PixelPipePitch of 10 instead of
-   * 1280 (640px * 2 bytes/px for the RGB565 pipe output). Cleaner fix:
-   * go back into CubeMX's DCMIPP configuration and correct these five
-   * directly so this override becomes unnecessary -- until then it
-   * survives regeneration because it's in this USER CODE block. */
-  pCSI_Config.NumberOfLanes = DCMIPP_CSI_TWO_DATA_LANES;
+  /* Lanes/data type/bpp/pitch are all fixed at the source now (checked
+   * against RedEye.ioc) -- the four-line override that used to be here
+   * for those is gone, re-asserting values that now have a real source
+   * of truth above would just make it harder to notice if CubeMX ever
+   * disagrees with itself again. This one field still doesn't have a
+   * verified value anywhere though: */
   /* Least-verified number in this whole pipeline -- see camera_stream.c
    * and ov5647.c for why. If the sensor probes fine (I2C2 ACKs, chip ID
    * reads back 0x5647) but HAL_DCMIPP_PIPE_FrameEventCallback never
@@ -325,24 +320,6 @@ static void MX_DCMIPP_Init(void)
    * DCMIPP_CSI_PHY_BT_* values on. */
   pCSI_Config.PHYBitrate = DCMIPP_CSI_PHY_BT_400;
   if (HAL_DCMIPP_CSI_SetConfig(&hdcmipp, &pCSI_Config) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  pCSI_PipeConfig.DataTypeIDA = DCMIPP_DT_RAW8;
-  pCSI_PipeConfig.DataTypeIDB = DCMIPP_DT_RAW8;
-  if (HAL_DCMIPP_CSI_PIPE_SetConfig(&hdcmipp, DCMIPP_PIPE1, &pCSI_PipeConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  if (HAL_DCMIPP_CSI_SetVCConfig(&hdcmipp, DCMIPP_VIRTUAL_CHANNEL0, DCMIPP_CSI_DT_BPP8) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  pPipeConfig.PixelPipePitch = CAMERA_STREAM_WIDTH * 2U;   /* RGB565 */
-  if (HAL_DCMIPP_PIPE_SetConfig(&hdcmipp, DCMIPP_PIPE1, &pPipeConfig) != HAL_OK)
   {
     Error_Handler();
   }
@@ -594,19 +571,13 @@ static void MX_JPEG_Init(void)
    * causes DMA to silently stall instead of erroring out. */
   HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_ETH1, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_NPRIV);
 
-  /* Same gap, extended to DCMIPP -- it has a master (RIMU) grant from
-   * the ioc's DCMIPP_CID_RIMU=1 (auto-generated above), but that's
-   * NPRIV (same issue as ETH1's master originally was) and it never
-   * got a slave (RISC) grant at all. Mirroring the proven ETH1 fix
-   * pattern here since DCMIPP is the same kind of DMA-bus-mastering
-   * peripheral; JPEG doesn't need this anymore, it now gets its own
-   * grant natively (see the RISUP configuration section above --
-   * that one uses PRIV rather than NPRIV, apparently JPEG needs the
-   * different attribute; if DCMIPP still doesn't work with NPRIV
-   * here, PRIV is the thing to try next). */
-  RIMC_master.SecPriv = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV;
-  HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_DCMIPP, &RIMC_master);
-  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_DCMIPP, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_NPRIV);
+  /* DCMIPP's override that used to live here is gone -- CubeMX now
+   * generates a complete, correct native grant for it above (master
+   * *and* slave, both PRIV; RIF.RISUP.DCMIPP.Privilege=true in the
+   * ioc), matching JPEG's. The old override was actively wrong by
+   * the end: it re-set the slave attribute to NPRIV right after the
+   * generated code above had just set it to the correct PRIV,
+   * silently undoing it every build. */
 
   /* USER CODE END RIF_Init 1 */
   /* USER CODE BEGIN RIF_Init 2 */
