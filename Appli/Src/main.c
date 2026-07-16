@@ -31,6 +31,8 @@
 #include "ethernetif.h"
 #include "app_ethernet.h"
 #include "net_display.h"
+#include "camera_stream.h"
+#include "mjpeg_server.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -123,6 +125,13 @@ int main(void)
 
   /* USER CODE BEGIN SysInit */
 
+  /* RIF grants must land before any peripheral driven by CID1 touches
+   * its own registers -- SystemIsolation_Config() is auto-called again
+   * later (after MX_DCMIPP_Init()/MX_JPEG_Init()) by CubeMX's generated
+   * sequence; calling it here too, first, fixes that ordering. The
+   * later call just re-applies the same config, which is harmless. */
+  SystemIsolation_Config();
+
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -177,6 +186,25 @@ int main(void)
   /* Separate, faster timer for the LAN status row -- see
    * ethernet_phy_debug_print() in ethernetif.c. */
   uint32_t phy_debug_timer = HAL_GetTick();
+
+  CAMERA_STREAM_StatusTypeDef cam_status = CAMERA_STREAM_Init(&hi2c2, &hdcmipp, &hjpeg);
+  if (cam_status != CAMERA_STREAM_OK)
+  {
+    /* Sensor not found or DCMIPP wouldn't start -- see
+     * CAMERA_INTEGRATION.md's debugging checklist. Not calling
+     * Error_Handler() here on purpose so Ethernet/OLED still come up
+     * even if the camera doesn't. */
+    if (oled_status == SH1106_OK)
+    {
+      SH1106_SetCursor(0, 32);
+      SH1106_WriteString("CAM: FAIL", SH1106_COLOR_WHITE);
+      SH1106_UpdateScreen();
+    }
+  }
+  else
+  {
+    MJPEG_SERVER_Init(80);
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -199,6 +227,11 @@ int main(void)
 #if LWIP_DHCP
     DHCP_Periodic_Handle(&gnetif);
 #endif
+
+    /* Same story as the lwIP calls above: cheap no-ops when there's
+     * nothing to do, but need to run every iteration. */
+    CAMERA_STREAM_Process();
+    MJPEG_SERVER_Poll();
 
     /* Refresh the LAN connection status row every 200ms. */
     if (oled_status == SH1106_OK && (HAL_GetTick() - phy_debug_timer) >= 200)
@@ -251,28 +284,68 @@ static void MX_DCMIPP_Init(void)
   /** Pipe 1 Config
   */
   pCSI_PipeConfig.DataTypeMode = DCMIPP_DTMODE_DTIDA;
-  pCSI_PipeConfig.DataTypeIDA = DCMIPP_DT_YUV420_8;
-  pCSI_PipeConfig.DataTypeIDB = DCMIPP_DT_YUV420_8;
+  pCSI_PipeConfig.DataTypeIDA = DCMIPP_DT_RAW8;
+  pCSI_PipeConfig.DataTypeIDB = DCMIPP_DT_RAW8;
   if (HAL_DCMIPP_CSI_PIPE_SetConfig(&hdcmipp, DCMIPP_PIPE1, &pCSI_PipeConfig) != HAL_OK)
   {
     Error_Handler();
   }
   pCSI_Config.PHYBitrate = DCMIPP_CSI_PHY_BT_80;
   pCSI_Config.DataLaneMapping = DCMIPP_CSI_PHYSICAL_DATA_LANES;
-  pCSI_Config.NumberOfLanes = DCMIPP_CSI_ONE_DATA_LANE;
+  pCSI_Config.NumberOfLanes = DCMIPP_CSI_TWO_DATA_LANES;
   HAL_DCMIPP_CSI_SetConfig(&hdcmipp, &pCSI_Config);
   pPipeConfig.FrameRate = DCMIPP_FRAME_RATE_ALL;
-  pPipeConfig.PixelPipePitch = 10;
+  pPipeConfig.PixelPipePitch = 1280;
   pPipeConfig.PixelPackerFormat = DCMIPP_PIXEL_PACKER_FORMAT_RGB565_1;
   if (HAL_DCMIPP_PIPE_SetConfig(&hdcmipp, DCMIPP_PIPE1, &pPipeConfig) != HAL_OK)
   {
     Error_Handler();
   }
-  if (HAL_DCMIPP_CSI_SetVCConfig(&hdcmipp, 0U, DCMIPP_CSI_DT_BPP6) != HAL_OK)
+  if (HAL_DCMIPP_CSI_SetVCConfig(&hdcmipp, 0U, DCMIPP_CSI_DT_BPP8) != HAL_OK)
   {
     Error_Handler();
   }
   /* USER CODE BEGIN DCMIPP_Init 2 */
+
+  /* Good news: this is CSI now, not parallel -- fixed at the CubeMX
+   * level since last time. What's generated above still doesn't match
+   * the OV5647 (2-lane MIPI CSI-2, RAW8 Bayer, no on-sensor ISP) in five
+   * places though: 1 data lane instead of 2, YUV420 8-bit instead of
+   * RAW8, 6 bits/pixel instead of 8, an 80 Mbps/lane PHY bitrate that
+   * looks like a placeholder, and a PixelPipePitch of 10 instead of
+   * 1280 (640px * 2 bytes/px for the RGB565 pipe output). Cleaner fix:
+   * go back into CubeMX's DCMIPP configuration and correct these five
+   * directly so this override becomes unnecessary -- until then it
+   * survives regeneration because it's in this USER CODE block. */
+  pCSI_Config.NumberOfLanes = DCMIPP_CSI_TWO_DATA_LANES;
+  /* Least-verified number in this whole pipeline -- see camera_stream.c
+   * and ov5647.c for why. If the sensor probes fine (I2C2 ACKs, chip ID
+   * reads back 0x5647) but HAL_DCMIPP_PIPE_FrameEventCallback never
+   * fires -- no image at all -- this is the first thing to try adjacent
+   * DCMIPP_CSI_PHY_BT_* values on. */
+  pCSI_Config.PHYBitrate = DCMIPP_CSI_PHY_BT_400;
+  if (HAL_DCMIPP_CSI_SetConfig(&hdcmipp, &pCSI_Config) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  pCSI_PipeConfig.DataTypeIDA = DCMIPP_DT_RAW8;
+  pCSI_PipeConfig.DataTypeIDB = DCMIPP_DT_RAW8;
+  if (HAL_DCMIPP_CSI_PIPE_SetConfig(&hdcmipp, DCMIPP_PIPE1, &pCSI_PipeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  if (HAL_DCMIPP_CSI_SetVCConfig(&hdcmipp, DCMIPP_VIRTUAL_CHANNEL0, DCMIPP_CSI_DT_BPP8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  pPipeConfig.PixelPipePitch = CAMERA_STREAM_WIDTH * 2U;   /* RGB565 */
+  if (HAL_DCMIPP_PIPE_SetConfig(&hdcmipp, DCMIPP_PIPE1, &pPipeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
 
   /* USER CODE END DCMIPP_Init 2 */
 
@@ -470,12 +543,14 @@ static void MX_JPEG_Init(void)
   /*RIMC configuration*/
   RIMC_MasterConfig_t RIMC_master = {0};
   RIMC_master.MasterCID = RIF_CID_1;
-  RIMC_master.SecPriv = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_NPRIV;
+  RIMC_master.SecPriv = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV;
   HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_DCMIPP, &RIMC_master);
 
+  RIMC_master.SecPriv = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_NPRIV;
   HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_ETH1, &RIMC_master);
 
   /*RISUP configuration*/
+  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_DCMIPP , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
   HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_JPEG , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
 
   /* RIF-Aware IPs Config */
@@ -518,6 +593,20 @@ static void MX_JPEG_Init(void)
    * DMARxDscrTab/DMATxDscrTab), which is exactly the kind of gap that
    * causes DMA to silently stall instead of erroring out. */
   HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_ETH1, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_NPRIV);
+
+  /* Same gap, extended to DCMIPP -- it has a master (RIMU) grant from
+   * the ioc's DCMIPP_CID_RIMU=1 (auto-generated above), but that's
+   * NPRIV (same issue as ETH1's master originally was) and it never
+   * got a slave (RISC) grant at all. Mirroring the proven ETH1 fix
+   * pattern here since DCMIPP is the same kind of DMA-bus-mastering
+   * peripheral; JPEG doesn't need this anymore, it now gets its own
+   * grant natively (see the RISUP configuration section above --
+   * that one uses PRIV rather than NPRIV, apparently JPEG needs the
+   * different attribute; if DCMIPP still doesn't work with NPRIV
+   * here, PRIV is the thing to try next). */
+  RIMC_master.SecPriv = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV;
+  HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_DCMIPP, &RIMC_master);
+  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_DCMIPP, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_NPRIV);
 
   /* USER CODE END RIF_Init 1 */
   /* USER CODE BEGIN RIF_Init 2 */
