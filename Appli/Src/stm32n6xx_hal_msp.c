@@ -74,8 +74,6 @@ void HAL_MspInit(void)
 
   HAL_PWREx_EnableVddIO4();
 
-  HAL_PWREx_EnableVddIO5();
-
   /* USER CODE BEGIN MspInit 1 */
 
   /* USER CODE END MspInit 1 */
@@ -89,7 +87,6 @@ void HAL_MspInit(void)
   */
 void HAL_DCMIPP_MspInit(DCMIPP_HandleTypeDef* hdcmipp)
 {
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
   RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
   if(hdcmipp->Instance==DCMIPP)
   {
@@ -110,53 +107,12 @@ void HAL_DCMIPP_MspInit(DCMIPP_HandleTypeDef* hdcmipp)
 
     /* Peripheral clock enable */
     __HAL_RCC_DCMIPP_CLK_ENABLE();
-
-    __HAL_RCC_GPIOE_CLK_ENABLE();
-    __HAL_RCC_GPIOC_CLK_ENABLE();
-    __HAL_RCC_GPIOD_CLK_ENABLE();
-    __HAL_RCC_GPIOF_CLK_ENABLE();
-    __HAL_RCC_GPIOG_CLK_ENABLE();
-    /**DCMIPP GPIO Configuration
-    PE8     ------> DCMIPP_D4
-    PC6     ------> DCMIPP_D1
-    PC5     ------> DCMIPP_D2
-    PE10     ------> DCMIPP_D3
-    PE4     ------> DCMIPP_D5
-    PD5     ------> DCMIPP_PIXCLK
-    PD7     ------> DCMIPP_D0
-    PF1     ------> DCMIPP_D7
-    PG2     ------> DCMIPP_D6
-    */
-    GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_10|GPIO_PIN_4;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Alternate = GPIO_AF9_DCMIPP;
-    HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
-
-    GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_5;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Alternate = GPIO_AF9_DCMIPP;
-    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-    GPIO_InitStruct.Pin = GPIO_PIN_5|GPIO_PIN_7;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Alternate = GPIO_AF9_DCMIPP;
-    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-    GPIO_InitStruct.Pin = GPIO_PIN_1;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Alternate = GPIO_AF9_DCMIPP;
-    HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
-
-    GPIO_InitStruct.Pin = GPIO_PIN_2;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Alternate = GPIO_AF9_DCMIPP;
-    HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
-
+    __HAL_RCC_CSI_CLK_ENABLE();
+    __HAL_RCC_CSI_FORCE_RESET();
+    __HAL_RCC_CSI_RELEASE_RESET();
+    /* DCMIPP interrupt Init */
+    HAL_NVIC_SetPriority(DCMIPP_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(DCMIPP_IRQn);
     /* USER CODE BEGIN DCMIPP_MspInit 1 */
 
     /* USER CODE END DCMIPP_MspInit 1 */
@@ -179,29 +135,12 @@ void HAL_DCMIPP_MspDeInit(DCMIPP_HandleTypeDef* hdcmipp)
 
     /* USER CODE END DCMIPP_MspDeInit 0 */
     /* Peripheral clock disable */
-    __HAL_RCC_DCMIPP_CLK_DISABLE();
+    __HAL_RCC_CSI_CLK_DISABLE();
+    __HAL_RCC_CSI_FORCE_RESET();
+    __HAL_RCC_CSI_RELEASE_RESET();
 
-    /**DCMIPP GPIO Configuration
-    PE8     ------> DCMIPP_D4
-    PC6     ------> DCMIPP_D1
-    PC5     ------> DCMIPP_D2
-    PE10     ------> DCMIPP_D3
-    PE4     ------> DCMIPP_D5
-    PD5     ------> DCMIPP_PIXCLK
-    PD7     ------> DCMIPP_D0
-    PF1     ------> DCMIPP_D7
-    PG2     ------> DCMIPP_D6
-    */
-    HAL_GPIO_DeInit(GPIOE, GPIO_PIN_8|GPIO_PIN_10|GPIO_PIN_4);
-
-    HAL_GPIO_DeInit(GPIOC, GPIO_PIN_6|GPIO_PIN_5);
-
-    HAL_GPIO_DeInit(GPIOD, GPIO_PIN_5|GPIO_PIN_7);
-
-    HAL_GPIO_DeInit(GPIOF, GPIO_PIN_1);
-
-    HAL_GPIO_DeInit(GPIOG, GPIO_PIN_2);
-
+    /* DCMIPP interrupt DeInit */
+    HAL_NVIC_DisableIRQ(DCMIPP_IRQn);
     /* USER CODE BEGIN DCMIPP_MspDeInit 1 */
 
     /* USER CODE END DCMIPP_MspDeInit 1 */
@@ -518,6 +457,9 @@ void HAL_JPEG_MspInit(JPEG_HandleTypeDef* hjpeg)
     /* USER CODE END JPEG_MspInit 0 */
     /* Peripheral clock enable */
     __HAL_RCC_JPEG_CLK_ENABLE();
+    /* JPEG interrupt Init */
+    HAL_NVIC_SetPriority(JPEG_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(JPEG_IRQn);
     /* USER CODE BEGIN JPEG_MspInit 1 */
 
     /* USER CODE END JPEG_MspInit 1 */
@@ -541,6 +483,9 @@ void HAL_JPEG_MspDeInit(JPEG_HandleTypeDef* hjpeg)
     /* USER CODE END JPEG_MspDeInit 0 */
     /* Peripheral clock disable */
     __HAL_RCC_JPEG_CLK_DISABLE();
+
+    /* JPEG interrupt DeInit */
+    HAL_NVIC_DisableIRQ(JPEG_IRQn);
     /* USER CODE BEGIN JPEG_MspDeInit 1 */
 
     /* USER CODE END JPEG_MspDeInit 1 */

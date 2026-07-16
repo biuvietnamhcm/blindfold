@@ -235,7 +235,8 @@ static void MX_DCMIPP_Init(void)
 
   /* USER CODE END DCMIPP_Init 0 */
 
-  DCMIPP_ParallelConfTypeDef pParallelConfig = {0};
+  DCMIPP_CSI_PIPE_ConfTypeDef pCSI_PipeConfig = {0};
+  DCMIPP_CSI_ConfTypeDef pCSI_Config = {0};
   DCMIPP_PipeConfTypeDef pPipeConfig = {0};
 
   /* USER CODE BEGIN DCMIPP_Init 1 */
@@ -247,28 +248,27 @@ static void MX_DCMIPP_Init(void)
     Error_Handler();
   }
 
-  /** Parallel Config
-  */
-  pParallelConfig.SynchroCodes.FrameEndCode = 0;
-  pParallelConfig.SynchroCodes.FrameStartCode = 0;
-  pParallelConfig.SynchroCodes.LineEndCode = 0;
-  pParallelConfig.SynchroCodes.LineStartCode = 0;
-  pParallelConfig.PCKPolarity = DCMIPP_PCKPOLARITY_FALLING;
-  pParallelConfig.HSPolarity = DCMIPP_HSPOLARITY_LOW ;
-  pParallelConfig.VSPolarity = DCMIPP_VSPOLARITY_LOW;
-  pParallelConfig.ExtendedDataMode = DCMIPP_INTERFACE_8BITS;
-  pParallelConfig.Format = DCMIPP_FORMAT_MONOCHROME_8B;
-  pParallelConfig.SwapBits = DCMIPP_SWAPBITS_DISABLE;
-  pParallelConfig.SwapCycles = DCMIPP_SWAPCYCLES_DISABLE;
-  pParallelConfig.SynchroMode = DCMIPP_SYNCHRO_EMBEDDED;
-  HAL_DCMIPP_PARALLEL_SetConfig(&hdcmipp, &pParallelConfig);
-
   /** Pipe 1 Config
   */
+  pCSI_PipeConfig.DataTypeMode = DCMIPP_DTMODE_DTIDA;
+  pCSI_PipeConfig.DataTypeIDA = DCMIPP_DT_YUV420_8;
+  pCSI_PipeConfig.DataTypeIDB = DCMIPP_DT_YUV420_8;
+  if (HAL_DCMIPP_CSI_PIPE_SetConfig(&hdcmipp, DCMIPP_PIPE1, &pCSI_PipeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  pCSI_Config.PHYBitrate = DCMIPP_CSI_PHY_BT_80;
+  pCSI_Config.DataLaneMapping = DCMIPP_CSI_PHYSICAL_DATA_LANES;
+  pCSI_Config.NumberOfLanes = DCMIPP_CSI_ONE_DATA_LANE;
+  HAL_DCMIPP_CSI_SetConfig(&hdcmipp, &pCSI_Config);
   pPipeConfig.FrameRate = DCMIPP_FRAME_RATE_ALL;
   pPipeConfig.PixelPipePitch = 10;
   pPipeConfig.PixelPackerFormat = DCMIPP_PIXEL_PACKER_FORMAT_RGB565_1;
   if (HAL_DCMIPP_PIPE_SetConfig(&hdcmipp, DCMIPP_PIPE1, &pPipeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_DCMIPP_CSI_SetVCConfig(&hdcmipp, 0U, DCMIPP_CSI_DT_BPP6) != HAL_OK)
   {
     Error_Handler();
   }
@@ -475,6 +475,9 @@ static void MX_JPEG_Init(void)
 
   HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_ETH1, &RIMC_master);
 
+  /*RISUP configuration*/
+  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_JPEG , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
+
   /* RIF-Aware IPs Config */
 
   /* set up GPIO configuration */
@@ -487,16 +490,7 @@ static void MX_JPEG_Init(void)
   HAL_GPIO_ConfigPinAttributes(GPIOB,GPIO_PIN_10,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOB,GPIO_PIN_11,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOC,GPIO_PIN_1,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
-  HAL_GPIO_ConfigPinAttributes(GPIOC,GPIO_PIN_5,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
-  HAL_GPIO_ConfigPinAttributes(GPIOC,GPIO_PIN_6,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
-  HAL_GPIO_ConfigPinAttributes(GPIOD,GPIO_PIN_5,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
-  HAL_GPIO_ConfigPinAttributes(GPIOD,GPIO_PIN_7,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOE,GPIO_PIN_3,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
-  HAL_GPIO_ConfigPinAttributes(GPIOE,GPIO_PIN_4,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
-  HAL_GPIO_ConfigPinAttributes(GPIOE,GPIO_PIN_8,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
-  HAL_GPIO_ConfigPinAttributes(GPIOE,GPIO_PIN_10,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
-  HAL_GPIO_ConfigPinAttributes(GPIOF,GPIO_PIN_1,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
-  HAL_GPIO_ConfigPinAttributes(GPIOG,GPIO_PIN_2,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOH,GPIO_PIN_9,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
 
   /* USER CODE BEGIN RIF_Init 1 */
@@ -545,9 +539,7 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();

@@ -74,8 +74,6 @@ void HAL_MspInit(void)
 
   HAL_PWREx_EnableVddIO4();
 
-  HAL_PWREx_EnableVddIO5();
-
   /* USER CODE BEGIN MspInit 1 */
 
   /* USER CODE END MspInit 1 */
