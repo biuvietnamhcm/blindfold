@@ -20,6 +20,18 @@
 #include "jpeg_utils.h"
 #include <string.h>
 
+/* ---- Camera control lines (CN6, UM3417 Rev 3 Table 15) --------------
+ * The OV5647 module's power and reset are gated by two GPIOs that the
+ * generated CubeMX code never drives. Until PWR_EN is high and NRST_CAM
+ * is released, the sensor is unpowered / held in reset and will not ACK
+ * on I2C2 -- which surfaces as CAMERA_STREAM_ERROR_SENSOR_NOT_FOUND
+ * ("CAM: FAIL" on the OLED). CAM_PowerUp() below is what actually turns
+ * the sensor on; it must run before the first I2C access. */
+#define CAM_PWREN_PORT   GPIOA
+#define CAM_PWREN_PIN    GPIO_PIN_0     /* CN6 pin 18, PWR_EN   */
+#define CAM_NRST_PORT    GPIOO
+#define CAM_NRST_PIN     GPIO_PIN_5     /* CN6 pin 17, NRST_CAM */
+
 /* ---- Tunables -------------------------------------------------------- */
 #define JPEG_QUALITY            80U
 #define JPEG_OUT_BUFFER_SIZE     (64U * 1024U)   /* per slot; VGA JPEG at
@@ -283,6 +295,44 @@ void HAL_DCMIPP_PIPE_FrameEventCallback(DCMIPP_HandleTypeDef *hdcmipp, uint32_t 
   }
 }
 
+/* Power the OV5647 up and release it from reset. Must run before any I2C
+ * access to the sensor. Timing is deliberately generous: the module's
+ * onboard regulators/oscillator need to settle, and the OV5647 wants
+ * >~20 ms after reset release before it answers on the SCCB/I2C bus. */
+static void CAM_PowerUp(void)
+{
+  GPIO_InitTypeDef gpio = {0};
+
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOO_CLK_ENABLE();
+
+  /* RIF: this app runs Secure/CID1, so give these two pins the same
+   * secure attribute the rest of the board's GPIOs get in
+   * SystemIsolation_Config() -- otherwise the writes below can be
+   * fenced by the security fabric. */
+  HAL_GPIO_ConfigPinAttributes(CAM_PWREN_PORT, CAM_PWREN_PIN, GPIO_PIN_SEC | GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(CAM_NRST_PORT,  CAM_NRST_PIN,  GPIO_PIN_SEC | GPIO_PIN_NPRIV);
+
+  /* Pre-load ODR to the known-off state before switching the pins to
+   * outputs, so they don't glitch high during HAL_GPIO_Init(). */
+  HAL_GPIO_WritePin(CAM_PWREN_PORT, CAM_PWREN_PIN, GPIO_PIN_RESET); /* power off  */
+  HAL_GPIO_WritePin(CAM_NRST_PORT,  CAM_NRST_PIN,  GPIO_PIN_RESET); /* in reset   */
+
+  gpio.Mode  = GPIO_MODE_OUTPUT_PP;
+  gpio.Pull  = GPIO_NOPULL;
+  gpio.Speed = GPIO_SPEED_FREQ_LOW;
+  gpio.Pin   = CAM_PWREN_PIN;
+  HAL_GPIO_Init(CAM_PWREN_PORT, &gpio);
+  gpio.Pin   = CAM_NRST_PIN;
+  HAL_GPIO_Init(CAM_NRST_PORT, &gpio);
+
+  HAL_Delay(5);
+  HAL_GPIO_WritePin(CAM_PWREN_PORT, CAM_PWREN_PIN, GPIO_PIN_SET);   /* enable power  */
+  HAL_Delay(10);
+  HAL_GPIO_WritePin(CAM_NRST_PORT,  CAM_NRST_PIN,  GPIO_PIN_SET);   /* release reset */
+  HAL_Delay(20);                                                    /* sensor boot   */
+}
+
 /* ---- Public API --------------------------------------------------------*/
 CAMERA_STREAM_StatusTypeDef CAMERA_STREAM_Init(I2C_HandleTypeDef *hi2c2,
                                                 DCMIPP_HandleTypeDef *hdcmipp,
@@ -294,6 +344,10 @@ CAMERA_STREAM_StatusTypeDef CAMERA_STREAM_Init(I2C_HandleTypeDef *hi2c2,
   s_hi2c2 = hi2c2;
   s_hdcmipp = hdcmipp;
   s_hjpeg = hjpeg;
+
+  /* Turn the sensor on and release it from reset before any I2C access,
+   * otherwise the chip-ID read below NACKs -> "CAM: FAIL". */
+  CAM_PowerUp();
 
   io.Init     = CAM_IO_Init;
   io.DeInit   = CAM_IO_DeInit;

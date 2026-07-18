@@ -95,7 +95,7 @@ static void MX_I2C2_Init(void);
 static void SystemIsolation_Config(void);
 /* USER CODE BEGIN PFP */
 static void Netif_Config(void);
-
+static void BlinkBlue(uint8_t count);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -196,14 +196,60 @@ int main(void)
      * even if the camera doesn't. */
     if (oled_status == SH1106_OK)
     {
+      /* Show the failing stage so the cause is visible without a debugger:
+       *   NODEV = sensor didn't ACK / wrong chip-ID  (power, reset, I2C, FPC)
+       *   INIT  = sensor ACKed but register init/start failed (reg table)
+       *   DCMIPP= sensor OK but CSI/DCMIPP pipe wouldn't start */
+      const char *msg;
+      switch (cam_status)
+      {
+          case CAMERA_STREAM_ERROR_SENSOR_NOT_FOUND:
+              msg = "CAM: NODEV";
+              SH1106_SetCursor(0, 32);
+              SH1106_WriteString(msg, SH1106_COLOR_WHITE);
+              SH1106_UpdateScreen();
+              BlinkBlue(2);
+              break;
+
+          case CAMERA_STREAM_ERROR_SENSOR_INIT:
+              msg = "CAM: INIT";
+              SH1106_SetCursor(0, 32);
+              SH1106_WriteString(msg, SH1106_COLOR_WHITE);
+              SH1106_UpdateScreen();
+              BlinkBlue(3);
+              break;
+
+          case CAMERA_STREAM_ERROR_DCMIPP:
+              msg = "CAM: DCMIPP";
+              SH1106_SetCursor(0, 32);
+              SH1106_WriteString(msg, SH1106_COLOR_WHITE);
+              SH1106_UpdateScreen();
+              BlinkBlue(4);
+              break;
+
+          default:
+              msg = "CAM: FAIL";
+              SH1106_SetCursor(0, 32);
+              SH1106_WriteString(msg, SH1106_COLOR_WHITE);
+              SH1106_UpdateScreen();
+              BlinkBlue(5);
+              break;
+      }
       SH1106_SetCursor(0, 32);
-      SH1106_WriteString("CAM: FAIL", SH1106_COLOR_WHITE);
+      SH1106_WriteString(msg, SH1106_COLOR_WHITE);
       SH1106_UpdateScreen();
     }
   }
   else
   {
     MJPEG_SERVER_Init(80);
+    for (uint8_t i = 0; i < 1; i++)
+    {
+        BSP_LED_On(LED_RED);
+        HAL_Delay(150);
+        BSP_LED_Off(LED_RED);
+        HAL_Delay(150);
+    }
   }
   /* USER CODE END 2 */
 
@@ -433,6 +479,22 @@ static void MX_I2C1_Init(void)
   * @param None
   * @retval None
   */
+
+static void BlinkBlue(uint8_t count)
+{
+    while (1)
+    {
+        for (uint8_t i = 0; i < count; i++)
+        {
+            BSP_LED_On(LED_BLUE);
+            HAL_Delay(120);
+            BSP_LED_Off(LED_BLUE);
+            HAL_Delay(120);
+        }
+
+        HAL_Delay(700); // nghỉ giữa các chu kỳ
+    }
+}
 static void MX_I2C2_Init(void)
 {
 
@@ -492,6 +554,7 @@ static void MX_JPEG_Init(void)
 
   /* USER CODE END JPEG_Init 1 */
   hjpeg.Instance = JPEG;
+
   if (HAL_JPEG_Init(&hjpeg) != HAL_OK)
   {
     Error_Handler();
