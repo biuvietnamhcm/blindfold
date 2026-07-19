@@ -43,6 +43,24 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
+/* ---- CSI bring-up bracketing toggles --------------------------------------
+ * If frames still don't land (v stays 0) and Er keeps climbing after the
+ * IC18=20MHz clock fix, the PHY is seeing the lanes but can't sync. Bracket
+ * these two knobs -- change ONE at a time, rebuild, reflash, watch v/Er:
+ *
+ *   CAM_CSI_PHY_BITRATE : computed rate is 291.67 Mbit/s/lane -> BT_300.
+ *                         If no lock, try the neighbours BT_275 then BT_325.
+ *   CAM_CSI_LANE_MAPPING: the MB1723 22->15 pin adapter may swap the two
+ *                         data lanes. If BT bracketing doesn't lock, flip
+ *                         PHYSICAL <-> INVERTED.
+ *
+ * Reading the result each try:
+ *   v climbs        -> LOCKED. Stop bracketing (fix the image next).
+ *   v:0, Er climbs  -> still wrong: try the next value.
+ *   v:0, Er:0       -> no signal at all (regressed): revert last change. */
+#define CAM_CSI_PHY_BITRATE    DCMIPP_CSI_PHY_BT_300   /* try _275 / _325   */
+#define CAM_CSI_LANE_MAPPING   DCMIPP_CSI_INVERTED_DATA_LANES /* or _INVERTED_DATA_LANES */
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -145,7 +163,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   for(int i = 0; i < 10; i++){
-    BSP_LED_Toggle(LED_BLUE);
+    BSP_LED_Toggle(LED_GREEN);
     HAL_Delay(50);
   }
   SH1106_Status oled_status = SH1106_Init(&hi2c1);
@@ -291,11 +309,29 @@ int main(void)
       last_tick = HAL_GetTick();
       oled_uptime_s++;
 
-      char line[16];
-      snprintf(line, sizeof(line), "up: %lus", (unsigned long)oled_uptime_s);
+      /* Camera bring-up telemetry, two rows (see CAMERA_STREAM_GetDebugCounts
+       * for how to read them):
+       *   y=48  "v:<vsync> c:<captured>"
+       *   y=56  "e:<encoded> Er:<errors>"
+       * Quick guide: v climbs = sensor is streaming; c climbs = capture OK;
+       * Er>0 with v=0 = bit-rate/lane mismatch; all zero = no MIPI signal. */
+      uint32_t cap = 0, enc = 0, vs = 0, er = 0;
+      CAMERA_STREAM_GetDebugCounts(&cap, &enc, &vs, &er);
+
+      char line[17];
+      snprintf(line, sizeof(line), "v:%lu c:%lu",
+               (unsigned long)vs, (unsigned long)cap);
       SH1106_FillRectangle(0, 48, SH1106_WIDTH - 1, 48 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
       SH1106_SetCursor(0, 48);
       SH1106_WriteString(line, SH1106_COLOR_WHITE);
+
+      snprintf(line, sizeof(line), "e:%lu Er:%lu",
+               (unsigned long)enc, (unsigned long)er);
+      SH1106_FillRectangle(0, 56, SH1106_WIDTH - 1, 56 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
+      SH1106_SetCursor(0, 56);
+      SH1106_WriteString(line, SH1106_COLOR_WHITE);
+
+      (void)oled_uptime_s;
       SH1106_UpdateScreen();
     }
   }
@@ -359,12 +395,33 @@ static void MX_DCMIPP_Init(void)
    * of truth above would just make it harder to notice if CubeMX ever
    * disagrees with itself again. This one field still doesn't have a
    * verified value anywhere though: */
-  /* Least-verified number in this whole pipeline -- see camera_stream.c
-   * and ov5647.c for why. If the sensor probes fine (I2C2 ACKs, chip ID
-   * reads back 0x5647) but HAL_DCMIPP_PIPE_FrameEventCallback never
-   * fires -- no image at all -- this is the first thing to try adjacent
-   * DCMIPP_CSI_PHY_BT_* values on. */
-  pCSI_Config.PHYBitrate = DCMIPP_CSI_PHY_BT_400;
+  /* CSI D-PHY receive bit-rate. This MUST match the rate the OV5647
+   * actually drives on its MIPI lanes, or the PHY never locks and
+   * HAL_DCMIPP_PIPE_FrameEventCallback never fires (symptom: sensor
+   * probes fine but v:0 c:0 -- no frame ever starts).
+   *
+   * Computed from the OV5647 PLL1 tree (same block as OV5640), NOT guessed:
+   *   bit_rate/lane = XVCLK * mult / pre_div / sys_div / mipi_div
+   * with XVCLK=25 MHz and the ov5647.c register table:
+   *   0x3036=0x46 -> mult=70
+   *   0x3037 unwritten -> reset default 0x03 -> pre_div=3
+   *   0x3035=0x21 -> sys_div=2, mipi_div=1   (0x21 IS the correct mainline
+   *                  VGA value; it's written twice in the kernel's
+   *                  ov5647_640x480 table and the last write, 0x21, wins)
+   *   0x3034=0x08 -> 8-bit; sits on the SCLK branch, not the serial branch,
+   *                  so it does NOT affect the lane rate.
+   * => 25*70/3/2/1 = 291.67 Mbit/s per lane (link/clock-lane 145.83 MHz).
+   * Matches the mainline ov5647 VGA link_freq of 145,833,300 Hz exactly.
+   *
+   * The DCMIPP_CSI_PHY_BT_* bands are upper bounds; 291.67 sits between
+   * _275 and _300, so BT_300 is the correct (tightest) band. The old
+   * BT_600 assumed sys_div=1 (583 Mbit/s) and was 2x too high, so the
+   * D-PHY never locked -- that was the root cause of v:0 c:0. If frames
+   * still don't land with the CSI error IRQ now wired, watch Er: Er>0
+   * means bracket +/- one band (BT_275 / BT_325) or the lane order/
+   * polarity is swapped in the MB1723 adapter; Er==0 means no signal at
+   * all (sensor not streaming / clock lane / FPC). */
+  pCSI_Config.PHYBitrate = DCMIPP_CSI_PHY_BT_300;
   if (HAL_DCMIPP_CSI_SetConfig(&hdcmipp, &pCSI_Config) != HAL_OK)
   {
     Error_Handler();

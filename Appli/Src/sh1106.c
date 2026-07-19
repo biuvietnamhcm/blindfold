@@ -14,6 +14,12 @@ static uint8_t  sh1106_buffer[SH1106_WIDTH * SH1106_PAGES];
 static uint16_t sh1106_cursor_x;
 static uint16_t sh1106_cursor_y;
 
+/* Bit p set == page p has been written since the last SH1106_UpdateScreen().
+ * SH1106_PAGES is 8 for the 128x64 panel this driver targets, so a uint32_t
+ * has room to spare -- this stays correct even if SH1106_HEIGHT ever grows,
+ * up to 32 pages (256px). */
+static uint32_t sh1106_dirty_pages;
+
 /* ---- low level I2C helpers --------------------------------------------- */
 
 static HAL_StatusTypeDef SH1106_WriteCommand(uint8_t cmd)
@@ -105,12 +111,29 @@ void SH1106_Fill(SH1106_COLOR color)
 {
     memset(sh1106_buffer, (color == SH1106_COLOR_BLACK) ? 0x00 : 0xFF,
            sizeof(sh1106_buffer));
+
+    /* Bulk memset bypasses SH1106_DrawPixel()'s per-page marking below, so
+     * mark everything dirty explicitly -- next UpdateScreen() must push the
+     * whole panel after a Fill(). */
+    sh1106_dirty_pages = (SH1106_PAGES >= 32U) ? 0xFFFFFFFFUL
+                                                : ((1UL << SH1106_PAGES) - 1UL);
 }
 
 void SH1106_UpdateScreen(void)
 {
+    /* Each page costs up to 4 blocking HAL_I2C_Mem_Write calls (3 command +
+     * 1 data), each with up to SH1106_I2C_TIMEOUT_MS to complete -- worst
+     * case that's SH1106_PAGES * 4 * SH1106_I2C_TIMEOUT_MS blocking the
+     * NO_SYS main loop (lwIP included) per call. Callers here only ever
+     * touch one or two rows at a time, so skipping clean pages turns most
+     * updates into a single page's worth of I2C traffic instead of all 8. */
     for (uint8_t page = 0; page < SH1106_PAGES; page++)
     {
+        if ((sh1106_dirty_pages & (1UL << page)) == 0U)
+        {
+            continue;
+        }
+
         uint8_t col_lo = (SH1106_COLUMN_OFFSET) & 0x0F;
         uint8_t col_hi = 0x10 | ((SH1106_COLUMN_OFFSET >> 4) & 0x0F);
 
@@ -120,6 +143,8 @@ void SH1106_UpdateScreen(void)
 
         SH1106_WriteData(&sh1106_buffer[page * SH1106_WIDTH], SH1106_WIDTH);
     }
+
+    sh1106_dirty_pages = 0;
 }
 
 void SH1106_DrawPixel(int16_t x, int16_t y, SH1106_COLOR color)
@@ -139,6 +164,11 @@ void SH1106_DrawPixel(int16_t x, int16_t y, SH1106_COLOR color)
     {
         sh1106_buffer[idx] &= (uint8_t)~(1U << (y % 8));
     }
+
+    /* Doesn't check whether the bit actually flipped -- worst case that
+     * over-marks a page that was already correct, which just costs one
+     * redundant page write next UpdateScreen(), not a missed update. */
+    sh1106_dirty_pages |= (1UL << (y / 8));
 }
 
 void SH1106_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, SH1106_COLOR color)

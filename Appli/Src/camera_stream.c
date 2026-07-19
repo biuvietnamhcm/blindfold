@@ -284,6 +284,31 @@ void HAL_JPEG_ErrorCallback(JPEG_HandleTypeDef *hjpeg)
   s_encode_busy = 0;
 }
 
+/* ---- DCMIPP bring-up diagnostics --------------------------------------
+ * These counters exist purely to tell apart *why* no frame lands, without
+ * a debugger. All three interrupt sources are already enabled by the HAL
+ * (PIPE1 vsync/frame by HAL_DCMIPP_CSI_PIPE_Start; CSI sync + D-PHY errors
+ * by HAL_DCMIPP_CSI_SetConfig), so these weak-override callbacks just
+ * count:
+ *   s_vsync_count : DCMIPP saw a frame START on PIPE1 (sensor IS driving
+ *                   the MIPI lanes and the PHY locked at least to a SOF).
+ *   s_capture_frame_id : a full frame completed (the goal).
+ *   s_csi_err_count : CSI sync / D-PHY line errors -- the PHY is receiving
+ *                   something but can't decode it (bit-rate/timing/lane).
+ *
+ * Reading them together:
+ *   v=0  c=0  Er=0 -> PHY sees nothing: sensor not streaming, clock lane,
+ *                     power/reset, or adapter/FPC wiring. Not the bit-rate.
+ *   v=0  c=0  Er>0 -> PHY sees signal but can't sync: bit-rate/lane/polarity
+ *                     -- the computed rate is 291.67 Mbit/s/lane so the band
+ *                     is BT_300 (see main.c); bracket BT_275 / BT_325, or
+ *                     the MB1723 adapter has swapped lane order/polarity.
+ *   v>0  c=0       -> frames start but never complete: DCMIPP pixel config
+ *                     (data type / packing / line count), not the PHY.
+ *   v>0  c>0       -> capture works; problem is downstream (JPEG/stream). */
+static volatile uint32_t s_vsync_count = 0;
+static volatile uint32_t s_csi_err_count = 0;
+
 /* ---- DCMIPP frame-ready callback --------------------------------------*/
 void HAL_DCMIPP_PIPE_FrameEventCallback(DCMIPP_HandleTypeDef *hdcmipp, uint32_t Pipe)
 {
@@ -293,6 +318,30 @@ void HAL_DCMIPP_PIPE_FrameEventCallback(DCMIPP_HandleTypeDef *hdcmipp, uint32_t 
     s_capture_frame_id++;
     s_new_capture_ready = 1;
   }
+}
+
+void HAL_DCMIPP_PIPE_VsyncEventCallback(DCMIPP_HandleTypeDef *hdcmipp, uint32_t Pipe)
+{
+  (void)hdcmipp;
+  if (Pipe == DCMIPP_PIPE1) { s_vsync_count++; }
+}
+
+void HAL_DCMIPP_PIPE_ErrorCallback(DCMIPP_HandleTypeDef *hdcmipp, uint32_t Pipe)
+{
+  (void)hdcmipp; (void)Pipe;
+  s_csi_err_count++;
+}
+
+void HAL_DCMIPP_ErrorCallback(DCMIPP_HandleTypeDef *hdcmipp)
+{
+  (void)hdcmipp;
+  s_csi_err_count++;
+}
+
+void HAL_DCMIPP_CSI_LineErrorCallback(DCMIPP_HandleTypeDef *hdcmipp, uint32_t DataLane)
+{
+  (void)hdcmipp; (void)DataLane;
+  s_csi_err_count++;
 }
 
 /* Power the OV5647 up and release it from reset. Must run before any I2C
@@ -380,6 +429,35 @@ CAMERA_STREAM_StatusTypeDef CAMERA_STREAM_Init(I2C_HandleTypeDef *hi2c2,
     return CAMERA_STREAM_ERROR_SENSOR_INIT;
   }
 
+  /* RAW8 Bayer -> RGB565 needs the Pipe1 ISP demosaicing (RawBayer2RGB)
+   * block explicitly configured and enabled. MX_DCMIPP_Init() sets the
+   * pixel packer to RGB565 but the demosaic block defaults to bypassed,
+   * so without this the RGB packer just receives raw Bayer bytes and the
+   * image comes out garbled/green. (This does NOT gate frame capture --
+   * v:0/c:0 is a CSI D-PHY lock problem upstream of here -- but the image
+   * is unusable until demosaicing is on, so configure it before capture.)
+   *
+   * Bayer order: the sensor table sets mirror+flip (0x3821/0x3820), which
+   * swaps the Bayer phase; BGGR is the starting guess for this mode. If a
+   * captured frame shows a strong magenta/green checkerboard cast, this is
+   * the knob to rotate (RGGB / GRBG / GBRG). */
+  {
+    DCMIPP_RawBayer2RGBConfTypeDef demosaic = {0};
+    demosaic.RawBayerType  = DCMIPP_RAWBAYER_BGGR;
+    demosaic.VLineStrength = DCMIPP_RAWBAYER_ALGO_STRENGTH_8;
+    demosaic.HLineStrength = DCMIPP_RAWBAYER_ALGO_STRENGTH_8;
+    demosaic.PeakStrength  = DCMIPP_RAWBAYER_ALGO_STRENGTH_8;
+    demosaic.EdgeStrength  = DCMIPP_RAWBAYER_ALGO_STRENGTH_8;
+    if (HAL_DCMIPP_PIPE_SetISPRawBayer2RGBConfig(s_hdcmipp, DCMIPP_PIPE1, &demosaic) != HAL_OK)
+    {
+      return CAMERA_STREAM_ERROR_DCMIPP;
+    }
+    if (HAL_DCMIPP_PIPE_EnableISPRawBayer2RGB(s_hdcmipp, DCMIPP_PIPE1) != HAL_OK)
+    {
+      return CAMERA_STREAM_ERROR_DCMIPP;
+    }
+  }
+
   /* Continuous single-buffer capture, matching ST's DCMIPP_ContinuousMode
    * pattern: DCMIPP keeps overwriting camera_rgb_frame every frame. There's
    * a small tearing risk if a JPEG encode is still reading late lines of
@@ -445,6 +523,15 @@ uint32_t CAMERA_STREAM_GetLatestJPEG(uint32_t last_frame_id, uint8_t **data,
   *data = jpeg_out_buf[s_latest_ready_slot];
   *len  = jpeg_out_len[s_latest_ready_slot];
   return 1;
+}
+
+void CAMERA_STREAM_GetDebugCounts(uint32_t *captured, uint32_t *encoded,
+                                  uint32_t *vsync, uint32_t *errors)
+{
+  if (captured != NULL) { *captured = s_capture_frame_id; }
+  if (encoded  != NULL) { *encoded  = s_jpeg_frame_id; }
+  if (vsync    != NULL) { *vsync    = s_vsync_count; }
+  if (errors   != NULL) { *errors   = s_csi_err_count; }
 }
 
 void CAMERA_STREAM_ReleaseJPEG(uint8_t *data)

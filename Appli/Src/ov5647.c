@@ -101,7 +101,13 @@ static const ov5647_reg_t ov5647_640x480_raw8[] =
   { 0x4000, 0x09 },
   /* ---- MIPI ------------------------------------------------------------*/
   { 0x4837, 0x19 },    /* MIPI global timing / pclk period                 */
-  { 0x4800, 0x24 },    /* MIPI control                                     */
+  { 0x4800, 0x04 },    /* MIPI CTRL00: continuous clock (bit5 gating=0).
+                          Was 0x24 (gated/non-continuous) -- the STM32N6 CSI
+                          D-PHY keeps the clock lane in stop-state with a
+                          gated clock and never enters HS RX, which shows up
+                          as v:0 c:0 Er:0 (no signal at all). If frames still
+                          don't land after this, the next suspect is the
+                          22-pin adapter's lane/clock wiring, not a register. */
   { 0x300e, 0x45 },    /* MIPI 2-lane enable                               */
   { 0x4801, 0x0f },
   { 0x300f, 0x88 },

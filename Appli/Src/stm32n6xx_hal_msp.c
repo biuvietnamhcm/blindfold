@@ -98,8 +98,17 @@ void HAL_DCMIPP_MspInit(DCMIPP_HandleTypeDef* hdcmipp)
   */
     PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_DCMIPP|RCC_PERIPHCLK_CSI;
     PeriphClkInitStruct.DcmippClockSelection = RCC_DCMIPPCLKSOURCE_PCLK5;
+    /* IC18 is the CSI kernel clock == the MIPI D-PHY config/reference clock
+     * (cfg_clk). HAL_DCMIPP_CSI_SetConfig() hard-codes the DesignWare
+     * cfgclkfreqrange assuming this clock sits in the ~17-27 MHz window;
+     * ST's own N6 camera example runs it at 20 MHz. It was PLL4/1 = 1600 MHz
+     * here (~80x over range) -- the D-PHY calibration never completes and the
+     * PHY never locks, which is exactly the v:0 c:0 Er:0 (no-signal) symptom.
+     * PLL4 = 1600 MHz, so /80 = 20 MHz. NOTE: this is unrelated to the CSI
+     * *lane bitrate* (DCMIPP_CSI_PHY_BT_300 in MX_DCMIPP_Init) -- different
+     * knob; don't confuse the two. */
     PeriphClkInitStruct.ICSelection[RCC_IC18].ClockSelection = RCC_ICCLKSOURCE_PLL4;
-    PeriphClkInitStruct.ICSelection[RCC_IC18].ClockDivider = 1;
+    PeriphClkInitStruct.ICSelection[RCC_IC18].ClockDivider = 80;
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
     {
       Error_Handler();
@@ -115,6 +124,14 @@ void HAL_DCMIPP_MspInit(DCMIPP_HandleTypeDef* hdcmipp)
     HAL_NVIC_EnableIRQ(DCMIPP_IRQn);
     /* USER CODE BEGIN DCMIPP_MspInit 1 */
 
+    /* CSI is a SEPARATE NVIC vector from DCMIPP. HAL_DCMIPP_CSI_SetConfig()
+     * enables the CSI D-PHY / sync / line-error interrupts, but without
+     * enabling CSI_IRQn here (and a CSI_IRQHandler in stm32n6xx_it.c) they
+     * are never serviced -- so CSI sync/bit-rate errors are invisible and
+     * the camera "Er" bring-up counter stays stuck at 0 even during a real
+     * D-PHY lock failure. */
+    HAL_NVIC_SetPriority(CSI_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(CSI_IRQn);
     /* USER CODE END DCMIPP_MspInit 1 */
 
   }

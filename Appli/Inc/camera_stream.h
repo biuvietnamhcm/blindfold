@@ -59,6 +59,19 @@ uint32_t CAMERA_STREAM_GetLatestJPEG(uint32_t last_frame_id, uint8_t **data,
                                       uint32_t *len, uint32_t *frame_id);
 void CAMERA_STREAM_ReleaseJPEG(uint8_t *data);
 
+/* Debug/telemetry for camera bring-up (any arg may be NULL):
+ *   captured : DCMIPP frames fully received on PIPE1
+ *   encoded  : JPEGs encoded
+ *   vsync    : PIPE1 frame-start (VSYNC) events -- sensor is driving lanes
+ *   errors   : CSI sync + D-PHY line errors -- PHY sees signal it can't decode
+ * Interpretation:
+ *   vsync=0 captured=0 errors=0 -> no MIPI signal (wiring/power/clock lane)
+ *   vsync=0 captured=0 errors>0 -> bit-rate/lane mismatch (bracket PHY_BT_*)
+ *   vsync>0 captured=0          -> DCMIPP pixel config, not the PHY
+ *   captured>0 encoded=0        -> JPEG encode path, not capture */
+void CAMERA_STREAM_GetDebugCounts(uint32_t *captured, uint32_t *encoded,
+                                  uint32_t *vsync, uint32_t *errors);
+
 #ifdef __cplusplus
 }
 #endif
