@@ -58,8 +58,8 @@
  *   v climbs        -> LOCKED. Stop bracketing (fix the image next).
  *   v:0, Er climbs  -> still wrong: try the next value.
  *   v:0, Er:0       -> no signal at all (regressed): revert last change. */
-#define CAM_CSI_PHY_BITRATE    DCMIPP_CSI_PHY_BT_300   /* try _275 / _325   */
-#define CAM_CSI_LANE_MAPPING   DCMIPP_CSI_INVERTED_DATA_LANES /* or _INVERTED_DATA_LANES */
+#define CAM_CSI_PHY_BITRATE    DCMIPP_CSI_PHY_BT_325   /* try _275 / _325   */
+#define CAM_CSI_LANE_MAPPING   DCMIPP_CSI_PHYSICAL_DATA_LANES /* or _INVERTED_DATA_LANES */
 
 /* USER CODE END PD */
 
@@ -179,6 +179,24 @@ int main(void)
     SH1106_Fill(SH1106_COLOR_BLACK);
     SH1106_SetCursor(0, 0);
     SH1106_WriteString("BlindFold", SH1106_COLOR_WHITE);
+
+    /* Row 8 is the one row on this display nothing else claims (0=title,
+     * 16/24/32=net_display.c, 40=net debug, 48/56=main loop below) -- see
+     * chat notes on the y=32 collision with the CAM: status line.
+     *
+     * This line reads the same two macros MX_DCMIPP_Init() actually
+     * assigns into pCSI_Config a few lines below, so it always shows
+     * what THIS BINARY was built with, not what main.c currently says on
+     * someone's disk. Cross-check against the table in this thread:
+     * PHY 16/17/18/20 = BT_275/300/325/400, LANE 1/2 = physical/inverted. */
+    {
+      char build_line[17];
+      snprintf(build_line, sizeof(build_line), "PHY:%lu LN:%lu",
+                (unsigned long)CAM_CSI_PHY_BITRATE, (unsigned long)CAM_CSI_LANE_MAPPING);
+      SH1106_SetCursor(0, 8);
+      SH1106_WriteString(build_line, SH1106_COLOR_WHITE);
+    }
+
     NetDisplay_ShowStatus("ETH: init...", NULL, NULL);
   }
   else
@@ -420,8 +438,15 @@ static void MX_DCMIPP_Init(void)
    * still don't land with the CSI error IRQ now wired, watch Er: Er>0
    * means bracket +/- one band (BT_275 / BT_325) or the lane order/
    * polarity is swapped in the MB1723 adapter; Er==0 means no signal at
-   * all (sensor not streaming / clock lane / FPC). */
-  pCSI_Config.PHYBitrate = DCMIPP_CSI_PHY_BT_300;
+   * all (sensor not streaming / clock lane / FPC).
+   *
+   * FIX: this used to hardcode DCMIPP_CSI_PHY_BT_300 and never touch
+   * DataLaneMapping again after its CubeMX-generated default, so the
+   * CAM_CSI_PHY_BITRATE / CAM_CSI_LANE_MAPPING knobs above this function
+   * were dead -- edit/rebuild/reflash changed nothing on the wire. Both
+   * now actually feed the struct that gets applied here. */
+  pCSI_Config.PHYBitrate = CAM_CSI_PHY_BITRATE;
+  pCSI_Config.DataLaneMapping = CAM_CSI_LANE_MAPPING;
   if (HAL_DCMIPP_CSI_SetConfig(&hdcmipp, &pCSI_Config) != HAL_OK)
   {
     Error_Handler();
