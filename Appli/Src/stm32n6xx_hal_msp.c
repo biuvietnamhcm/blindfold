@@ -98,17 +98,8 @@ void HAL_DCMIPP_MspInit(DCMIPP_HandleTypeDef* hdcmipp)
   */
     PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_DCMIPP|RCC_PERIPHCLK_CSI;
     PeriphClkInitStruct.DcmippClockSelection = RCC_DCMIPPCLKSOURCE_PCLK5;
-    /* IC18 is the CSI kernel clock == the MIPI D-PHY config/reference clock
-     * (cfg_clk). HAL_DCMIPP_CSI_SetConfig() hard-codes the DesignWare
-     * cfgclkfreqrange assuming this clock sits in the ~17-27 MHz window;
-     * ST's own N6 camera example runs it at 20 MHz. It was PLL4/1 = 1600 MHz
-     * here (~80x over range) -- the D-PHY calibration never completes and the
-     * PHY never locks, which is exactly the v:0 c:0 Er:0 (no-signal) symptom.
-     * PLL4 = 1600 MHz, so /80 = 20 MHz. NOTE: this is unrelated to the CSI
-     * *lane bitrate* (DCMIPP_CSI_PHY_BT_300 in MX_DCMIPP_Init) -- different
-     * knob; don't confuse the two. */
     PeriphClkInitStruct.ICSelection[RCC_IC18].ClockSelection = RCC_ICCLKSOURCE_PLL4;
-    PeriphClkInitStruct.ICSelection[RCC_IC18].ClockDivider = 80;
+    PeriphClkInitStruct.ICSelection[RCC_IC18].ClockDivider = 1;
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
     {
       Error_Handler();
@@ -124,6 +115,27 @@ void HAL_DCMIPP_MspInit(DCMIPP_HandleTypeDef* hdcmipp)
     HAL_NVIC_EnableIRQ(DCMIPP_IRQn);
     /* USER CODE BEGIN DCMIPP_MspInit 1 */
 
+    /* RedEye.ioc's Clock Configuration does NOT know about the /80 fix
+     * above yet -- its own cached RCC.IC18Freq_VALUE is still 1600000000
+     * (confirmed by grep: no IC18 divider is tracked in the ioc's
+     * IPParameters, only IC1/IC2/IC11 have one). That means the
+     * ClockDivider=80 line above is a hand-edit sitting in CubeMX-
+     * regenerated territory -- exactly the same class of problem as the
+     * ETH1 RIF fix in SystemIsolation_Config() below, and the same fix:
+     * re-assert it here so the next "Generate Code" (for something
+     * completely unrelated, e.g. adding a GPIO) can't silently put IC18
+     * back to 1600 MHz and reintroduce the v:0 c:0 Er:0 no-signal
+     * symptom. Still worth setting properly in CubeMX's Clock
+     * Configuration (find "IC18", source PLL4, divider 80) so this stops
+     * being defensive and becomes the actual source of truth. */
+    PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_CSI;
+    PeriphClkInitStruct.ICSelection[RCC_IC18].ClockSelection = RCC_ICCLKSOURCE_PLL4;
+    PeriphClkInitStruct.ICSelection[RCC_IC18].ClockDivider = 80;
+    if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
+    {
+      Error_Handler();
+    }
+
     /* CSI is a SEPARATE NVIC vector from DCMIPP. HAL_DCMIPP_CSI_SetConfig()
      * enables the CSI D-PHY / sync / line-error interrupts, but without
      * enabling CSI_IRQn here (and a CSI_IRQHandler in stm32n6xx_it.c) they
@@ -132,6 +144,24 @@ void HAL_DCMIPP_MspInit(DCMIPP_HandleTypeDef* hdcmipp)
      * D-PHY lock failure. */
     HAL_NVIC_SetPriority(CSI_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(CSI_IRQn);
+
+    /* DCMIPP and CSI are separate reset domains on APB5 (confirmed in
+     * stm32n6xx_ll_bus.h: LL_APB5_GRP1_PERIPH_CSI and _DCMIPP are distinct
+     * bits, both members of _PERIPH_ALL). The block above resets CSI
+     * (__HAL_RCC_CSI_FORCE_RESET/RELEASE_RESET) but only ever *enables*
+     * DCMIPP's clock -- its reset is never toggled, so the pixel-pipeline
+     * block can come up holding whatever state the FSBL (or a previous
+     * run) left it in. A real ST community DCMIPP bring-up example
+     * (community.st.com, "STM32N6: DCMIPP series module") explicitly
+     * pairs DCMIPP_CLK_ENABLE with DCMIPP_FORCE_RESET/RELEASE_RESET; this
+     * project never did. Not confirmed to be the cause of the CSI lock
+     * failure specifically (CSI's own reset, which is more directly
+     * responsible for D-PHY/protocol state, was already in place) -- but
+     * it's a real, previously-missing reset of a block this camera path
+     * depends on, so it belongs here regardless of whether it turns out
+     * to be load-bearing for that specific symptom. */
+    __HAL_RCC_DCMIPP_FORCE_RESET();
+    __HAL_RCC_DCMIPP_RELEASE_RESET();
     /* USER CODE END DCMIPP_MspInit 1 */
 
   }

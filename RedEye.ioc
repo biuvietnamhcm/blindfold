@@ -1168,6 +1168,7 @@ RIF.RIFAWARE.RTC\ Feature\ Timestamp\ protection\ Cid=-
 RIF.RIFAWARE.RTC\ Feature\ Timestamp\ protection\ Secure=false
 RIF.RIFAWARE.RTC\ Feature\ Wake-up\ timer\ protection\ Cid=-
 RIF.RIFAWARE.RTC\ Feature\ Wake-up\ timer\ protection\ Secure=false
+RIF.RISUP.CSI2HOST.Privilege=true
 RIF.RISUP.DCMIPP.Privilege=true
 RIF.RISUP.JPEG.Privilege=true
 RIF.SDMMC1_CID_RIMU=0

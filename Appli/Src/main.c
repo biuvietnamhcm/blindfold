@@ -43,23 +43,11 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-/* ---- CSI bring-up bracketing toggles --------------------------------------
- * If frames still don't land (v stays 0) and Er keeps climbing after the
- * IC18=20MHz clock fix, the PHY is seeing the lanes but can't sync. Bracket
- * these two knobs -- change ONE at a time, rebuild, reflash, watch v/Er:
- *
- *   CAM_CSI_PHY_BITRATE : computed rate is 291.67 Mbit/s/lane -> BT_300.
- *                         If no lock, try the neighbours BT_275 then BT_325.
- *   CAM_CSI_LANE_MAPPING: the MB1723 22->15 pin adapter may swap the two
- *                         data lanes. If BT bracketing doesn't lock, flip
- *                         PHYSICAL <-> INVERTED.
- *
- * Reading the result each try:
- *   v climbs        -> LOCKED. Stop bracketing (fix the image next).
- *   v:0, Er climbs  -> still wrong: try the next value.
- *   v:0, Er:0       -> no signal at all (regressed): revert last change. */
-#define CAM_CSI_PHY_BITRATE    DCMIPP_CSI_PHY_BT_325   /* try _275 / _325   */
-#define CAM_CSI_LANE_MAPPING   DCMIPP_CSI_PHYSICAL_DATA_LANES /* or _INVERTED_DATA_LANES */
+/* CAM_CSI_PHY_BITRATE / CAM_CSI_LANE_MAPPING moved to camera_stream.h:
+ * camera_stream.c's auto-scan (round 5) needs them as its step-0
+ * candidate, and this file isn't a shared header. Full history (the
+ * round-4 HAL bug, why BT_300, the round-5 auto-scan) is there and in
+ * CAMERA_INTEGRATION.md. */
 
 /* USER CODE END PD */
 
@@ -327,27 +315,61 @@ int main(void)
       last_tick = HAL_GetTick();
       oled_uptime_s++;
 
-      /* Camera bring-up telemetry, two rows (see CAMERA_STREAM_GetDebugCounts
-       * for how to read them):
-       *   y=48  "v:<vsync> c:<captured>"
-       *   y=56  "e:<encoded> Er:<errors>"
-       * Quick guide: v climbs = sensor is streaming; c climbs = capture OK;
-       * Er>0 with v=0 = bit-rate/lane mismatch; all zero = no MIPI signal. */
-      uint32_t cap = 0, enc = 0, vs = 0, er = 0;
-      CAMERA_STREAM_GetDebugCounts(&cap, &enc, &vs, &er);
-
+      /* Camera bring-up telemetry, two rows -- while CAMERA_STREAM's CSI
+       * auto-scan (camera_stream.c) is walking combinations looking for a
+       * lock, these rows show its progress instead; see
+       * CAMERA_STREAM_GetCSIScanStatus()/CAMERA_STREAM_GetDebugCounts(). */
+      CAMERA_STREAM_CSIScanStatusTypeDef scan = CAMERA_STREAM_GetCSIScanStatus();
       char line[17];
-      snprintf(line, sizeof(line), "v:%lu c:%lu",
-               (unsigned long)vs, (unsigned long)cap);
-      SH1106_FillRectangle(0, 48, SH1106_WIDTH - 1, 48 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
-      SH1106_SetCursor(0, 48);
-      SH1106_WriteString(line, SH1106_COLOR_WHITE);
 
-      snprintf(line, sizeof(line), "e:%lu Er:%lu",
-               (unsigned long)enc, (unsigned long)er);
-      SH1106_FillRectangle(0, 56, SH1106_WIDTH - 1, 56 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
-      SH1106_SetCursor(0, 56);
-      SH1106_WriteString(line, SH1106_COLOR_WHITE);
+      if (scan.active)
+      {
+        snprintf(line, sizeof(line), "Scan %lu/%lu",
+                 (unsigned long)scan.step, (unsigned long)scan.total);
+        SH1106_FillRectangle(0, 48, SH1106_WIDTH - 1, 48 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
+        SH1106_SetCursor(0, 48);
+        SH1106_WriteString(line, SH1106_COLOR_WHITE);
+
+        snprintf(line, sizeof(line), "T:%luMb %luL%c",
+                 (unsigned long)scan.mbps, (unsigned long)scan.lanes,
+                 scan.inverted ? 'I' : 'P');
+        SH1106_FillRectangle(0, 56, SH1106_WIDTH - 1, 56 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
+        SH1106_SetCursor(0, 56);
+        SH1106_WriteString(line, SH1106_COLOR_WHITE);
+      }
+      else
+      {
+        /* Scan finished (or the current config already worked at step 0,
+         * which looks the same from here): v climbs = sensor is
+         * streaming; c climbs = capture OK. Row 56 becomes whichever
+         * combination the scan landed on -- copy it into
+         * CAM_CSI_PHY_BITRATE/CAM_CSI_LANE_MAPPING (above) so future
+         * boots lock on step 0 again instead of re-scanning -- or, if the
+         * full sweep found nothing, that Er was never a config problem. */
+        uint32_t cap = 0, enc = 0, vs = 0, er = 0;
+        CAMERA_STREAM_GetDebugCounts(&cap, &enc, &vs, &er);
+
+        snprintf(line, sizeof(line), "v:%lu c:%lu",
+                 (unsigned long)vs, (unsigned long)cap);
+        SH1106_FillRectangle(0, 48, SH1106_WIDTH - 1, 48 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
+        SH1106_SetCursor(0, 48);
+        SH1106_WriteString(line, SH1106_COLOR_WHITE);
+
+        if (scan.locked)
+        {
+          snprintf(line, sizeof(line), "LK:%luMb %luL%c",
+                   (unsigned long)scan.mbps, (unsigned long)scan.lanes,
+                   scan.inverted ? 'I' : 'P');
+        }
+        else
+        {
+          snprintf(line, sizeof(line), "NO LOCK (chk HW)");
+        }
+        SH1106_FillRectangle(0, 56, SH1106_WIDTH - 1, 56 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
+        SH1106_SetCursor(0, 56);
+        SH1106_WriteString(line, SH1106_COLOR_WHITE);
+        (void)enc; (void)er;
+      }
 
       (void)oled_uptime_s;
       SH1106_UpdateScreen();
@@ -561,22 +583,6 @@ static void MX_I2C1_Init(void)
   * @param None
   * @retval None
   */
-
-static void BlinkBlue(uint8_t count)
-{
-    while (1)
-    {
-        for (uint8_t i = 0; i < count; i++)
-        {
-            BSP_LED_On(LED_BLUE);
-            HAL_Delay(120);
-            BSP_LED_Off(LED_BLUE);
-            HAL_Delay(120);
-        }
-
-        HAL_Delay(700); // nghỉ giữa các chu kỳ
-    }
-}
 static void MX_I2C2_Init(void)
 {
 
@@ -636,7 +642,6 @@ static void MX_JPEG_Init(void)
 
   /* USER CODE END JPEG_Init 1 */
   hjpeg.Instance = JPEG;
-
   if (HAL_JPEG_Init(&hjpeg) != HAL_OK)
   {
     Error_Handler();
@@ -672,6 +677,7 @@ static void MX_JPEG_Init(void)
   HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_ETH1, &RIMC_master);
 
   /*RISUP configuration*/
+  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_CSI , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
   HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_DCMIPP , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
   HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_JPEG , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
 
@@ -723,6 +729,31 @@ static void MX_JPEG_Init(void)
    * the end: it re-set the slave attribute to NPRIV right after the
    * generated code above had just set it to the correct PRIV,
    * silently undoing it every build. */
+
+  /* (3) CSI has NO grant anywhere -- not in the generated block above,
+   * not in RedEye.ioc (grep confirms no RIF.RISUP.CSI.* key exists at
+   * all, unlike DCMIPP's RIF.RISUP.DCMIPP.Privilege=true), and not
+   * previously here either. RIF_RISC_PERIPH_INDEX_CSI is a real, separate
+   * RISC slave resource (stm32n6xx_hal_rif.h: SEC28, immediately next to
+   * DCMIPP's SEC29 in the same register) -- CSI just never got the grant
+   * DCMIPP and JPEG did, so it's been sitting at whatever the silicon
+   * reset default is this whole time.
+   *
+   * This is the same failure class as (1)/(2) above, and it fits the
+   * symptom that sent us hunting for it exactly: HAL_DCMIPP_CSI_SetConfig()
+   * writes CR/PCR/PRCR/PFCR/PTCR0 and the D-PHY test-interface registers
+   * (DCMIPP_CSI_WritePHYReg) straight into the CSI peripheral. Every one
+   * of those calls has returned HAL_OK throughout every round of this
+   * bring-up -- the osc_freq_target fix, the IC18 clock fix, all 253
+   * PHYBitrate x DataLaneMapping x NumberOfLanes combinations in the
+   * auto-scan -- with zero effect on real hardware behavior. A RIF
+   * mismatch here means none of those writes were ever necessarily
+   * reaching the actual registers: the HAL doesn't (can't) distinguish
+   * "wrote the register" from "the write was silently fenced by RIF",
+   * so HAL_OK doesn't mean what it looks like it means. That would
+   * explain every one of the last three rounds coming up empty despite
+   * being individually well-reasoned and independently verified. */
+  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_CSI, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
 
   /* USER CODE END RIF_Init 1 */
   /* USER CODE BEGIN RIF_Init 2 */

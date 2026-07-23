@@ -230,26 +230,6 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
-  * @brief This function handles CSI global interrupt.
-  */
-void CSI_IRQHandler(void)
-{
-  /* USER CODE BEGIN CSI_IRQn 0 */
-
-  /* USER CODE END CSI_IRQn 0 */
-  /* The CSI D-PHY / sync / line-error interrupts are a SEPARATE NVIC vector
-   * (47) from DCMIPP (48). Without this handler + the matching
-   * HAL_NVIC_EnableIRQ(CSI_IRQn) in HAL_DCMIPP_MspInit(), the error IRQs
-   * that HAL_DCMIPP_CSI_SetConfig() enables (SYNCERR, D-PHY line errors,
-   * ...) are never serviced -- so the "Er" bring-up counter can never
-   * increment and a real bit-rate/lane mismatch reads as Er:0. */
-  HAL_DCMIPP_CSI_IRQHandler(&hdcmipp);
-  /* USER CODE BEGIN CSI_IRQn 1 */
-
-  /* USER CODE END CSI_IRQn 1 */
-}
-
-/**
   * @brief This function handles DCMIPP global interrupt.
   */
 void DCMIPP_IRQHandler(void)

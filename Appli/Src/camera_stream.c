@@ -344,6 +344,144 @@ void HAL_DCMIPP_CSI_LineErrorCallback(DCMIPP_HandleTypeDef *hdcmipp, uint32_t Da
   s_csi_err_count++;
 }
 
+/* ---- CSI auto-negotiation ----------------------------------------------
+ * v=0/Er climbing at CAM_CSI_PHY_BITRATE/CAM_CSI_LANE_MAPPING (main.c)
+ * means that guess is wrong, not that the D-PHY is unfixable -- so instead
+ * of another manual edit/rebuild/reflash cycle, walk every combination it
+ * supports and let the hardware say which one is right.
+ *
+ * DCMIPP_CSI_PHY_BT_80..BT_2500 are contiguous integers (0..62 -- see
+ * IS_DCMIPP_CSI_DATA_PHY_BITRATE in stm32n6xx_hal_dcmipp.h), so "try every
+ * band" is just "try every value 0..62" -- no need to name each one.
+ * csi_bitrate_mbps[] below exists purely so status/logging can show
+ * "300Mbps" instead of a meaningless index; it's indexed by that same
+ * raw PHYBitrate value.
+ *
+ * One tick (csi_scan_tick(), called from CAMERA_STREAM_Process() every
+ * main-loop iteration) applies at most one new candidate every
+ * CSI_SCAN_SETTLE_MS -- long enough for a few frames at any plausible
+ * sensor frame rate, short enough that a full 253-combination sweep is
+ * ~30s, not a boot-time freeze. Candidate order: current main.c value
+ * first (step 0, free if it's already right), then every PHYBitrate x
+ * DataLaneMapping at NumberOfLanes=TWO (what the sensor is actually
+ * configured to transmit), then the same sweep again at NumberOfLanes=ONE
+ * as a last resort in case the adapter only actually wires one lane
+ * through. */
+#define CSI_SCAN_SETTLE_MS     120U
+#define CSI_SCAN_BITRATE_COUNT (DCMIPP_CSI_PHY_BT_2500 + 1U)              /* 63  */
+#define CSI_SCAN_PER_LANE_STAGE (2U * CSI_SCAN_BITRATE_COUNT)             /* 126 (x2 DataLaneMapping) */
+#define CSI_SCAN_TOTAL_STEPS   (1U + 2U * CSI_SCAN_PER_LANE_STAGE)        /* 253 (x2 NumberOfLanes)   */
+
+static const uint16_t csi_bitrate_mbps[CSI_SCAN_BITRATE_COUNT] =
+{
+   80,  90, 100, 110, 120, 130, 140, 150, 160, 170,
+  180, 190, 205, 220, 235, 250, 275, 300, 325, 350,
+  400, 450, 500, 550, 600, 650, 700, 750, 800, 850,
+  900, 950,1000,1050,1100,1150,1200,1250,1300,1350,
+ 1400,1450,1500,1550,1600,1650,1700,1750,1800,1850,
+ 1900,1950,2000,2050,2100,2150,2200,2250,2300,2350,
+ 2400,2450,2500
+};
+
+static volatile uint32_t s_csi_scan_active = 0;   /* armed by csi_scan_start(), called from CAMERA_STREAM_Init() */
+static volatile uint32_t s_csi_scan_locked = 0;
+static uint32_t s_csi_scan_step = 0;
+static uint32_t s_csi_scan_deadline = 0;
+static uint32_t s_csi_scan_vsync_baseline = 0;
+static DCMIPP_CSI_ConfTypeDef s_csi_scan_cfg = {0};   /* current / winning combination */
+
+/* step 0 = whatever main.c is currently built with; step 1.. = the
+ * systematic sweep described above. */
+static void csi_scan_build_candidate(uint32_t step, DCMIPP_CSI_ConfTypeDef *cfg)
+{
+  if (step == 0U)
+  {
+    cfg->PHYBitrate      = CAM_CSI_PHY_BITRATE;
+    cfg->DataLaneMapping = CAM_CSI_LANE_MAPPING;
+    cfg->NumberOfLanes   = DCMIPP_CSI_TWO_DATA_LANES;
+  }
+  else
+  {
+    uint32_t idx         = step - 1U;
+    uint32_t lane_stage  = idx / CSI_SCAN_PER_LANE_STAGE;   /* 0 = two lanes, 1 = one lane */
+    uint32_t rem         = idx % CSI_SCAN_PER_LANE_STAGE;
+
+    cfg->PHYBitrate      = rem / 2U;
+    cfg->DataLaneMapping = ((rem % 2U) == 0U) ? DCMIPP_CSI_PHYSICAL_DATA_LANES
+                                               : DCMIPP_CSI_INVERTED_DATA_LANES;
+    cfg->NumberOfLanes   = (lane_stage == 0U) ? DCMIPP_CSI_TWO_DATA_LANES
+                                               : DCMIPP_CSI_ONE_DATA_LANE;
+  }
+}
+
+static void csi_scan_apply(uint32_t step)
+{
+  csi_scan_build_candidate(step, &s_csi_scan_cfg);
+  s_csi_scan_vsync_baseline = s_vsync_count;
+  (void)HAL_DCMIPP_CSI_SetConfig(s_hdcmipp, &s_csi_scan_cfg);
+  s_csi_scan_deadline = HAL_GetTick() + CSI_SCAN_SETTLE_MS;
+}
+
+/* Arms the scan. Deliberately does no waiting itself -- csi_scan_tick()
+ * (from CAMERA_STREAM_Process(), i.e. the main loop) does all the timed
+ * work, so CAMERA_STREAM_Init() stays fast and nothing else in main()
+ * stalls behind a bring-up scan. */
+static void csi_scan_start(void)
+{
+  s_csi_scan_active = 1;
+  s_csi_scan_locked = 0;
+  s_csi_scan_step = 0;
+  csi_scan_apply(0);
+}
+
+static void csi_scan_tick(void)
+{
+  if (!s_csi_scan_active)
+  {
+    return;
+  }
+  if ((int32_t)(HAL_GetTick() - s_csi_scan_deadline) < 0)
+  {
+    return;   /* still settling the current candidate */
+  }
+
+  if (s_vsync_count != s_csi_scan_vsync_baseline)
+  {
+    /* This combination produced a real frame-start. It's already applied
+     * in hardware (HAL_DCMIPP_CSI_SetConfig above) -- just stop. */
+    s_csi_scan_active = 0;
+    s_csi_scan_locked = 1;
+    return;
+  }
+
+  s_csi_scan_step++;
+  if (s_csi_scan_step >= CSI_SCAN_TOTAL_STEPS)
+  {
+    /* Every PHYBitrate x DataLaneMapping x NumberOfLanes combination the
+     * receiver supports has been tried without a single vsync. See
+     * CAMERA_INTEGRATION.md -- at this point it's a wiring/adapter/sensor
+     * question, not a config one. */
+    s_csi_scan_active = 0;
+    s_csi_scan_locked = 0;
+    return;
+  }
+  csi_scan_apply(s_csi_scan_step);
+}
+
+CAMERA_STREAM_CSIScanStatusTypeDef CAMERA_STREAM_GetCSIScanStatus(void)
+{
+  CAMERA_STREAM_CSIScanStatusTypeDef s;
+
+  s.active   = s_csi_scan_active;
+  s.step     = s_csi_scan_step;
+  s.total    = CSI_SCAN_TOTAL_STEPS;
+  s.locked   = s_csi_scan_locked;
+  s.mbps     = csi_bitrate_mbps[s_csi_scan_cfg.PHYBitrate];
+  s.lanes    = (s_csi_scan_cfg.NumberOfLanes == DCMIPP_CSI_TWO_DATA_LANES) ? 2U : 1U;
+  s.inverted = (s_csi_scan_cfg.DataLaneMapping == DCMIPP_CSI_INVERTED_DATA_LANES) ? 1U : 0U;
+  return s;
+}
+
 /* Power the OV5647 up and release it from reset. Must run before any I2C
  * access to the sensor. Timing is deliberately generous: the module's
  * onboard regulators/oscillator need to settle, and the OV5647 wants
@@ -470,11 +608,22 @@ CAMERA_STREAM_StatusTypeDef CAMERA_STREAM_Init(I2C_HandleTypeDef *hi2c2,
     return CAMERA_STREAM_ERROR_DCMIPP;
   }
 
+  /* Pipe is live and watching for a frame start. Arm the CSI auto-scan
+   * (see the block above HAL_DCMIPP_PIPE_ErrorCallback) instead of just
+   * trusting CAM_CSI_PHY_BITRATE/CAM_CSI_LANE_MAPPING blind -- if those
+   * are wrong, CAMERA_STREAM_Process() will walk every other combination
+   * on its own from here. */
+  csi_scan_start();
+
   return CAMERA_STREAM_OK;
 }
 
 void CAMERA_STREAM_Process(void)
 {
+  /* Cheap (one tick compare) except on the ~120ms boundaries where it
+   * actually applies the next candidate -- see csi_scan_tick() above. */
+  csi_scan_tick();
+
   if (s_encode_busy)
   {
     jpeg_encode_input_pump();
