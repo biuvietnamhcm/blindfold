@@ -77,22 +77,36 @@ void CAMERA_STREAM_GetDebugCounts(uint32_t *captured, uint32_t *encoded,
  * CAMERA_INTEGRATION.md and the FIX comment in stm32n6xx_hal_dcmipp.c
  * near DCMIPP_CSI_WritePHYReg). BT_300 below is the value derived from
  * the OV5647's actual PLL registers (ov5647.c) now that that bug is
- * fixed -- still just the round-4 best guess, though: round 5 (below)
- * doesn't trust it blindly, it's step 0 of the auto-scan. */
-#define CAM_CSI_PHY_BITRATE    DCMIPP_CSI_PHY_BT_300   /* derived value; the scan below brackets around/past it automatically if it's wrong */
+ * fixed. With CAM_CSI_AUTO_SCAN_ENABLE off (below), THIS is the one and
+ * only config that gets applied -- edit these two, rebuild, reflash,
+ * read v/c/Er, repeat, exactly like round 4's manual bracketing. */
+#define CAM_CSI_PHY_BITRATE    DCMIPP_CSI_PHY_BT_300   /* try _275 / _325 next if this doesn't lock */
 #define CAM_CSI_LANE_MAPPING   DCMIPP_CSI_PHYSICAL_DATA_LANES /* or _INVERTED_DATA_LANES */
 
+/* 0 (default): manual bracketing above -- CAMERA_STREAM_Init() applies
+ *   CAM_CSI_PHY_BITRATE/CAM_CSI_LANE_MAPPING (2 lanes) once and stops.
+ *   Nothing else touches CSI config; the OLED just shows plain v/c/Er
+ *   telemetry the way it did before round 5. Use this to test one
+ *   specific combination in isolation -- e.g. right now, to see whether
+ *   the round-7 RIF grant alone gets BT_300 to lock without the scan
+ *   also running and potentially muddying the picture.
+ * 1: round 5's auto-scan -- walk all 253 PHYBitrate x DataLaneMapping x
+ *   NumberOfLanes combinations if the manual value above doesn't lock
+ *   within ~120ms. See the block below for exactly how. */
+#define CAM_CSI_AUTO_SCAN_ENABLE  1
+
 /* ---- CSI auto-negotiation ----------------------------------------------
- * CAMERA_STREAM_Init() no longer just applies CAM_CSI_PHY_BITRATE /
- * CAM_CSI_LANE_MAPPING (main.c) and hopes: if PIPE1 hasn't seen a single
- * vsync ~120ms after that, it starts automatically walking every
- * DCMIPP_CSI_ConfTypeDef combination the CSI-2 receiver supports --
- * PHYBitrate BT_80..BT_2500, both DataLaneMapping values, both
- * NumberOfLanes values (253 combinations total) -- re-applying
- * HAL_DCMIPP_CSI_SetConfig() and watching for the vsync counter to move.
- * This is entirely non-blocking: one step is tried at most every ~120ms,
- * driven from CAMERA_STREAM_Process(), so the main loop/network/OLED all
- * keep running normally during a scan instead of a boot-time freeze.
+ * Only runs when CAM_CSI_AUTO_SCAN_ENABLE (above) is 1. CAMERA_STREAM_Init()
+ * doesn't just apply CAM_CSI_PHY_BITRATE / CAM_CSI_LANE_MAPPING and hope:
+ * if PIPE1 hasn't seen a single vsync ~120ms after that, it starts
+ * automatically walking every DCMIPP_CSI_ConfTypeDef combination the
+ * CSI-2 receiver supports -- PHYBitrate BT_80..BT_2500, both
+ * DataLaneMapping values, both NumberOfLanes values (253 combinations
+ * total) -- re-applying HAL_DCMIPP_CSI_SetConfig() and watching for the
+ * vsync counter to move. This is entirely non-blocking: one step is
+ * tried at most every ~120ms, driven from CAMERA_STREAM_Process(), so
+ * the main loop/network/OLED all keep running normally during a scan
+ * instead of a boot-time freeze.
  *
  * The moment a combination produces a vsync, the scan stops and leaves
  * that config applied (SetConfig already wrote it to hardware -- there's

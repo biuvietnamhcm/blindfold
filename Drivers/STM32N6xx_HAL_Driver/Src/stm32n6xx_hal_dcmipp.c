@@ -733,8 +733,27 @@ HAL_StatusTypeDef HAL_DCMIPP_CSI_SetConfig(const DCMIPP_HandleTypeDef *hdcmipp,
 
   /* set reg @0xe3 & reg @0xe2 value DLL target oscilation freq */
   /* Based on the table page 77, osc_freq_target */
+  /* FIX (was a ST HAL bug, verified against upstream stm32n6xx-hal-driver
+   * main branch and against Synopsys's own dw-dphy-rx Linux reference
+   * driver, which names these same test-codes RX_RX_STARTUP_OVR_3=0xe3
+   * (high byte) / RX_RX_STARTUP_OVR_2=0xe2 (low byte)): this line used to
+   * write to 0xe3 a second time, so the low byte silently clobbered the
+   * high byte written just above instead of landing in 0xe2, and 0xe2 was
+   * never written at all -- it sat at its power-on-reset value forever.
+   * Since osc_freq_target==460 for every PHYBitrate band from BT_80 up to
+   * BT_1500 (i.e. the entire practical range for a sensor like the
+   * OV5647), this broke the D-PHY's DLL calibration target identically
+   * for every bracket in that range -- which is exactly why bracketing
+   * PHYBitrate alone could never lock the PHY, no matter which band was
+   * tried.
+   *
+   * This fix lives in Drivers/, which CubeMX DOES overwrite on at least
+   * some regenerations (confirmed empirically -- it reverted to 0xe3 the
+   * first time this project regenerated for an unrelated RIF change), so
+   * it needs reapplying after every "Generate Code" until ST ships a
+   * corrected HAL package upstream. Worth reporting to ST if you haven't. */
   DCMIPP_CSI_WritePHYReg(csi_instance, 0x00, 0xe3, SNPS_Freqs[pCSI_Config->PHYBitrate].osc_freq_target >> 8);
-  DCMIPP_CSI_WritePHYReg(csi_instance, 0x00, 0xe3, SNPS_Freqs[pCSI_Config->PHYBitrate].osc_freq_target & 0xFFU);
+  DCMIPP_CSI_WritePHYReg(csi_instance, 0x00, 0xe2, SNPS_Freqs[pCSI_Config->PHYBitrate].osc_freq_target & 0xFFU);
 
   /* set basedir_0 to RX DLD 0 RX, 1 TX. Synopsys 1 RX 0 TX  + freq range */
   WRITE_REG(csi_instance-> PFCR, (0x28U << CSI_PFCR_CCFR_Pos) |

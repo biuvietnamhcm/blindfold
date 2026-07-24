@@ -1,3 +1,81 @@
+# Camera streaming -- round 8
+
+Regenerated from CubeMX after setting CSI2HOST to Secure+Privileged in
+the RIF panel (round 7's ask). Confirmed the grant is now native
+(`RIF.RISUP.CSI2HOST.Privilege=true` in the ioc, and
+`HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_CSI, ...)`
+generated natively in `SystemIsolation_Config()`) -- the hand-added
+duplicate grant was retired the same way DCMIPP's was.
+
+**But the same regeneration silently broke four other things, worth
+understanding since it'll happen again:**
+
+1. **`stm32n6xx_hal_dcmipp.c` (`Drivers/`) reverted to the buggy `0xe3`.**
+   Earlier rounds assumed `Drivers/` is copied wholesale and never
+   touched by "Generate Code" -- empirically wrong, at least for
+   whatever regeneration mode was used here. Re-patched; **this now
+   needs reapplying after every regeneration** until ST ships a fix
+   upstream (worth reporting, if you haven't).
+2. **IC18's divider reverted to 1** (1600 MHz again) in the
+   auto-generated part of `HAL_DCMIPP_MspInit()` -- expected, this was
+   flagged as a live risk since round 6 (RedEye.ioc's Clock
+   Configuration still doesn't know about the /80 fix). The USER CODE
+   re-assert right after it caught this correctly, so the *net* clock is
+   still right -- but this is the second time this exact warning has
+   proven itself; worth actually setting IC18 to PLL4/80 in CubeMX's
+   Clock Configuration tab now, the same way CSI2HOST just got fixed
+   properly instead of staying defensive.
+3. **`_Min_Stack_Size` reverted to CubeMX's 2 KB default** (was 16 KB) in
+   the linker script. This one's a real hazard, not just a reversion of
+   something already re-asserted elsewhere -- there's no USER CODE
+   equivalent for a linker script, so a stack overflow risk sat
+   unprotected. Restored to 0x4000.
+4. **`CSI_IRQHandler()` disappeared entirely from `stm32n6xx_it.c`** --
+   not reverted, *deleted*. This is a different failure mode from (1)/
+   (2): CSI_IRQn's NVIC enable only ever lived in a USER CODE section in
+   msp.c (defensively, precisely so regeneration couldn't touch it), but
+   that means CubeMX's own cross-file model of "which IRQs exist" never
+   learned about CSI_IRQn, so when it regenerated `stm32n6xx_it.c` it had
+   no reason to keep (or re-generate) a handler for it. Since CSI_IRQn
+   fires constantly (that's the whole "Er" counter), this would have
+   hung the board on the very first CSI interrupt after boot -- a worse
+   failure than anything the actual camera bug has produced so far, and
+   it would have looked like the RIF fix "broke" something instead of an
+   unrelated regeneration casualty. Restored. **This is the strongest
+   argument yet for actually enabling CSI_IRQn through CubeMX's NVIC tab**
+   instead of leaving it defensive -- a value silently reverting is
+   recoverable by the pattern this project already uses everywhere; a
+   whole function silently vanishing is not, and there's no way to
+   defend against that class of loss from inside the file it deletes.
+
+Also found and restored: `BlinkBlue()` (blink-coded camera error
+indicator, LED_BLUE blinked 2/3/4/5 times for NODEV/INIT/DCMIPP/FAIL) had
+its definition deleted while its declaration and 4 call sites survived --
+an undefined-reference build break. It was sitting unprotected between
+`MX_xxx_Init()` functions; moved into `USER CODE BEGIN 4` alongside
+`Netif_Config()` so this doesn't happen again.
+
+**Net lesson:** `Drivers/`, linker scripts, and cross-file dependencies
+(an IRQ enabled in one file needing a handler in another) are all
+regeneration-fragile in ways plain USER CODE markers in a single file
+don't fully protect against. Diffing the whole tree against the last
+known-good copy after every regeneration -- not just spot-checking the
+files you expect to have changed -- is the only reliable way to catch
+this class of damage before it costs a confusing debugging session.
+
+**Also added, as requested:** `CAM_CSI_AUTO_SCAN_ENABLE` in
+`camera_stream.h`, defaulting to **0 (manual)**. With it off,
+`CAMERA_STREAM_Init()` applies `CAM_CSI_PHY_BITRATE`/`CAM_CSI_LANE_MAPPING`
+once and stops -- no scanning, plain v/c/e/Er telemetry on the OLED,
+exactly the round-4 manual-bracketing workflow. Flip it to 1 to get
+round 5's 253-combination auto-scan back. Current manual value is still
+BT_300/PHYSICAL -- this build is specifically for testing whether the
+RIF grant alone gets that one, specific, mathematically-derived
+combination to lock, in isolation, with nothing else touching CSI config
+at the same time.
+
+---
+
 # Camera streaming -- round 7
 
 Found something that reframes every round before this one: **CSI never had

@@ -315,10 +315,13 @@ int main(void)
       last_tick = HAL_GetTick();
       oled_uptime_s++;
 
-      /* Camera bring-up telemetry, two rows -- while CAMERA_STREAM's CSI
-       * auto-scan (camera_stream.c) is walking combinations looking for a
-       * lock, these rows show its progress instead; see
+      /* Camera bring-up telemetry, two rows. With CAM_CSI_AUTO_SCAN_ENABLE
+       * (camera_stream.h) on, these show the round-5 auto-scan's live
+       * progress; off (the default -- manual bracketing, one config at a
+       * time), they're the plain v/c/e/Er readout from round 4, since
+       * there's no scan running to report on. See
        * CAMERA_STREAM_GetCSIScanStatus()/CAMERA_STREAM_GetDebugCounts(). */
+#if CAM_CSI_AUTO_SCAN_ENABLE
       CAMERA_STREAM_CSIScanStatusTypeDef scan = CAMERA_STREAM_GetCSIScanStatus();
       char line[17];
 
@@ -370,6 +373,29 @@ int main(void)
         SH1106_WriteString(line, SH1106_COLOR_WHITE);
         (void)enc; (void)er;
       }
+#else
+      /* Manual bracketing mode: no scan running, just read the counters.
+       *   v climbs        -> LOCKED.
+       *   v:0, Er climbs  -> still wrong: edit CAM_CSI_PHY_BITRATE /
+       *                      CAM_CSI_LANE_MAPPING (camera_stream.h),
+       *                      rebuild, reflash, try the next value.
+       *   v:0, Er:0       -> no signal at all: check power/wiring. */
+      uint32_t cap = 0, enc = 0, vs = 0, er = 0;
+      CAMERA_STREAM_GetDebugCounts(&cap, &enc, &vs, &er);
+
+      char line[17];
+      snprintf(line, sizeof(line), "v:%lu c:%lu",
+               (unsigned long)vs, (unsigned long)cap);
+      SH1106_FillRectangle(0, 48, SH1106_WIDTH - 1, 48 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
+      SH1106_SetCursor(0, 48);
+      SH1106_WriteString(line, SH1106_COLOR_WHITE);
+
+      snprintf(line, sizeof(line), "e:%lu Er:%lu",
+               (unsigned long)enc, (unsigned long)er);
+      SH1106_FillRectangle(0, 56, SH1106_WIDTH - 1, 56 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
+      SH1106_SetCursor(0, 56);
+      SH1106_WriteString(line, SH1106_COLOR_WHITE);
+#endif
 
       (void)oled_uptime_s;
       SH1106_UpdateScreen();
@@ -730,32 +756,14 @@ static void MX_JPEG_Init(void)
    * generated code above had just set it to the correct PRIV,
    * silently undoing it every build. */
 
-  /* (3) CSI has NO grant anywhere -- not in the generated block above,
-   * not in RedEye.ioc (grep confirms no RIF.RISUP.CSI.* key exists at
-   * all, unlike DCMIPP's RIF.RISUP.DCMIPP.Privilege=true), and not
-   * previously here either. RIF_RISC_PERIPH_INDEX_CSI is a real, separate
-   * RISC slave resource (stm32n6xx_hal_rif.h: SEC28, immediately next to
-   * DCMIPP's SEC29 in the same register) -- CSI just never got the grant
-   * DCMIPP and JPEG did, so it's been sitting at whatever the silicon
-   * reset default is this whole time.
-   *
-   * This is the same failure class as (1)/(2) above, and it fits the
-   * symptom that sent us hunting for it exactly: HAL_DCMIPP_CSI_SetConfig()
-   * writes CR/PCR/PRCR/PFCR/PTCR0 and the D-PHY test-interface registers
-   * (DCMIPP_CSI_WritePHYReg) straight into the CSI peripheral. Every one
-   * of those calls has returned HAL_OK throughout every round of this
-   * bring-up -- the osc_freq_target fix, the IC18 clock fix, all 253
-   * PHYBitrate x DataLaneMapping x NumberOfLanes combinations in the
-   * auto-scan -- with zero effect on real hardware behavior. A RIF
-   * mismatch here means none of those writes were ever necessarily
-   * reaching the actual registers: the HAL doesn't (can't) distinguish
-   * "wrote the register" from "the write was silently fenced by RIF",
-   * so HAL_OK doesn't mean what it looks like it means. That would
-   * explain every one of the last three rounds coming up empty despite
-   * being individually well-reasoned and independently verified. */
-  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_CSI, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
-
-  /* USER CODE END RIF_Init 1 */
+  /* CSI's override that used to live here is gone -- CubeMX now generates
+   * a complete, correct native grant for it above (RIF_ATTRIBUTE_SEC |
+   * RIF_ATTRIBUTE_PRIV; RIF.RISUP.CSI2HOST.Privilege=true in the ioc),
+   * matching DCMIPP and JPEG. Whether this was ever actually the reason
+   * CSI wouldn't lock is still unconfirmed either way -- a different
+   * STM32N6 board's working CSI-2 setup gets valid frame sync with no
+   * CSI-specific RIF grant at all, so this is "a real gap that's now
+   * closed", not "the confirmed fix". Rebuild and see. */
   /* USER CODE BEGIN RIF_Init 2 */
 
   /* USER CODE END RIF_Init 2 */
@@ -786,6 +794,30 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+/* Moved here from its previous spot sitting loose between MX_xxx_Init
+ * functions -- that's auto-generated territory, and this regeneration
+ * (for the RIF change) wiped the definition while leaving the forward
+ * declaration and all 4 call sites (both of those happen to sit in
+ * USER CODE-protected spots) intact -- an undefined-reference build
+ * break that would only surface at link time. USER CODE markers are the
+ * only part of this file CubeMX promises not to touch; this belongs in
+ * one of them the same way Netif_Config right below already does. */
+static void BlinkBlue(uint8_t count)
+{
+    while (1)
+    {
+        for (uint8_t i = 0; i < count; i++)
+        {
+            BSP_LED_On(LED_BLUE);
+            HAL_Delay(120);
+            BSP_LED_Off(LED_BLUE);
+            HAL_Delay(120);
+        }
+
+        HAL_Delay(700); // nghỉ giữa các chu kỳ
+    }
+}
 
 /**
   * @brief  Bring up the LwIP network interface on top of heth1 / ethernetif.

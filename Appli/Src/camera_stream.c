@@ -428,10 +428,21 @@ static void csi_scan_apply(uint32_t step)
  * stalls behind a bring-up scan. */
 static void csi_scan_start(void)
 {
+#if CAM_CSI_AUTO_SCAN_ENABLE
   s_csi_scan_active = 1;
   s_csi_scan_locked = 0;
   s_csi_scan_step = 0;
   csi_scan_apply(0);
+#else
+  /* Manual mode: apply CAM_CSI_PHY_BITRATE/CAM_CSI_LANE_MAPPING through
+   * the exact same step-0 path the scan would use, then stop -- never
+   * arm s_csi_scan_active, so csi_scan_tick() stays a no-op forever and
+   * nothing else touches CSI config from here on. main.c's OLED display
+   * doesn't consult scan status at all in this mode (see the #if
+   * CAM_CSI_AUTO_SCAN_ENABLE guard around that block there), so there's
+   * no "never scanned" state to represent -- it just isn't asked. */
+  csi_scan_apply(0);
+#endif
 }
 
 static void csi_scan_tick(void)
