@@ -21,16 +21,32 @@
 #include <string.h>
 
 /* ---- Camera control lines (CN6, UM3417 Rev 3 Table 15) --------------
- * The OV5647 module's power and reset are gated by two GPIOs that the
- * generated CubeMX code never drives. Until PWR_EN is high and NRST_CAM
- * is released, the sensor is unpowered / held in reset and will not ACK
- * on I2C2 -- which surfaces as CAMERA_STREAM_ERROR_SENSOR_NOT_FOUND
- * ("CAM: FAIL" on the OLED). CAM_PowerUp() below is what actually turns
- * the sensor on; it must run before the first I2C access. */
+ * The OV5647 module's power is gated by a GPIO that the generated CubeMX
+ * code never drives. CAM_PowerUp() below is what actually turns the
+ * sensor on; it must run before the first I2C access.
+ *
+ * IMPORTANT -- CN6 pins 17/18 vs. the generic Pi camera standard:
+ * This board's own module (a 15-pin/1mm OV5647 board on a 15-to-22
+ * adapter cable) is wired to the generic Raspberry-Pi-ecosystem 22-pin
+ * connector standard (same one Pi Zero W / CM IO Board use), where pin
+ * 17 = POWER-EN and pin 18 = LED-EN. UM3417's own CN6 table matches that
+ * generic standard exactly on every other pin (1-16, 19-22 all line up)
+ * but names 17/18 differently: pin 17 = NRST_CAM, pin 18 = PWR_EN. A
+ * standard adapter cable wires the module's real power-enable line
+ * (its own 15-pin pin 11) straight to 22-pin position 17, and the
+ * module's LED line (pin 12) to position 18 -- so on THIS board, PO5
+ * (silkscreened "NRST_CAM") is almost certainly the module's real
+ * power-enable, and PA0 (silkscreened "PWR_EN") is almost certainly
+ * just the LED. Driving PA0 high, as earlier code did, most likely just
+ * lights the LED (this is very likely why it lights up on this board
+ * and not on a real Pi -- recent Pi boards don't drive that line at
+ * all, and the Pi ecosystem never treats it as a power pin to begin
+ * with). CAM_PowerUp() below now drives only PO5 and leaves PA0 low,
+ * matching what a real Pi actually does with this connector position. */
 #define CAM_PWREN_PORT   GPIOA
-#define CAM_PWREN_PIN    GPIO_PIN_0     /* CN6 pin 18, PWR_EN   */
+#define CAM_PWREN_PIN    GPIO_PIN_0     /* CN6 pin 18, silkscreened PWR_EN -- on a standard module this is almost certainly just the LED line, not power (see note above) */
 #define CAM_NRST_PORT    GPIOO
-#define CAM_NRST_PIN     GPIO_PIN_5     /* CN6 pin 17, NRST_CAM */
+#define CAM_NRST_PIN     GPIO_PIN_5     /* CN6 pin 17, silkscreened NRST_CAM -- almost certainly the module's real power-enable line (see note above) */
 
 /* ---- Tunables -------------------------------------------------------- */
 #define JPEG_QUALITY            80U
@@ -493,10 +509,19 @@ CAMERA_STREAM_CSIScanStatusTypeDef CAMERA_STREAM_GetCSIScanStatus(void)
   return s;
 }
 
-/* Power the OV5647 up and release it from reset. Must run before any I2C
- * access to the sensor. Timing is deliberately generous: the module's
- * onboard regulators/oscillator need to settle, and the OV5647 wants
- * >~20 ms after reset release before it answers on the SCCB/I2C bus. */
+/* Power the OV5647 module up. Must run before any I2C access to the
+ * sensor. Timing is deliberately generous: the module's onboard
+ * regulators/oscillator need to settle before it will answer on SCCB/I2C.
+ *
+ * Only PO5 (CN6 pin 17) is driven high -- per the mapping note above,
+ * that's the pin a standard 15-to-22 adapter cable connects to the
+ * module's real power-enable line. PA0 (CN6 pin 18) is deliberately
+ * held low and never asserted: on a standard module that position is
+ * the LED line, not power, and a real Pi doesn't drive it either. This
+ * is a change from earlier revisions, which drove PA0 high believing it
+ * was the enable line -- untested against the CSI lock failure itself
+ * yet, but worth ruling in/out since it's the one part of the power
+ * path that was never exercised the way a real Pi exercises it. */
 static void CAM_PowerUp(void)
 {
   GPIO_InitTypeDef gpio = {0};
@@ -513,8 +538,8 @@ static void CAM_PowerUp(void)
 
   /* Pre-load ODR to the known-off state before switching the pins to
    * outputs, so they don't glitch high during HAL_GPIO_Init(). */
-  HAL_GPIO_WritePin(CAM_PWREN_PORT, CAM_PWREN_PIN, GPIO_PIN_RESET); /* power off  */
-  HAL_GPIO_WritePin(CAM_NRST_PORT,  CAM_NRST_PIN,  GPIO_PIN_RESET); /* in reset   */
+  HAL_GPIO_WritePin(CAM_PWREN_PORT, CAM_PWREN_PIN, GPIO_PIN_RESET); /* left low -- LED line, see note above */
+  HAL_GPIO_WritePin(CAM_NRST_PORT,  CAM_NRST_PIN,  GPIO_PIN_RESET); /* module held unpowered until asserted below */
 
   gpio.Mode  = GPIO_MODE_OUTPUT_PP;
   gpio.Pull  = GPIO_NOPULL;
@@ -525,10 +550,9 @@ static void CAM_PowerUp(void)
   HAL_GPIO_Init(CAM_NRST_PORT, &gpio);
 
   HAL_Delay(5);
-  HAL_GPIO_WritePin(CAM_PWREN_PORT, CAM_PWREN_PIN, GPIO_PIN_SET);   /* enable power  */
-  HAL_Delay(10);
-  HAL_GPIO_WritePin(CAM_NRST_PORT,  CAM_NRST_PIN,  GPIO_PIN_SET);   /* release reset */
-  HAL_Delay(20);                                                    /* sensor boot   */
+  HAL_GPIO_WritePin(CAM_NRST_PORT, CAM_NRST_PIN, GPIO_PIN_SET);  /* real enable line, asserted */
+  HAL_Delay(30);                                                  /* regulators/oscillator settle, sensor boot */
+  /* CAM_PWREN_PIN (PA0) intentionally never set high -- see note above. */
 }
 
 /* ---- Public API --------------------------------------------------------*/
