@@ -363,10 +363,12 @@ int main(void)
           snprintf(line, sizeof(line), "LK:%luMb %luL%c",
                    (unsigned long)scan.mbps, (unsigned long)scan.lanes,
                    scan.inverted ? 'I' : 'P');
+          BSP_LED_On(LED_BLUE);
         }
         else
         {
           snprintf(line, sizeof(line), "NO LOCK (chk HW)");
+          BSP_LED_On(LED_RED);
         }
         SH1106_FillRectangle(0, 56, SH1106_WIDTH - 1, 56 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
         SH1106_SetCursor(0, 56);
