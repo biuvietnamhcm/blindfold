@@ -21,10 +21,17 @@ typedef struct
   uint8_t  val;
 } ov5647_reg_t;
 
-/* Community-standard starting point for 640x480 RAW8 / 2-lane MIPI.
- * NOT verified against a real OV5647 module by this driver's author --
- * validate on your hardware before trusting exposure/timing numbers
- * derived from it. See CAMERA_INTEGRATION.md. */
+/* 640x480 RAW8 / 2-lane MIPI. Cross-checked register-by-register against
+ * the upstream raspberrypi/linux ov5647.c driver's own 640x480 mode
+ * table (the one running real Camera Module V1 units in the field) --
+ * found and fixed several value mismatches this table had against that
+ * reference: 0x4837 PCLK_PERIOD (0x19->0x24, must match the PLL config,
+ * which is otherwise identical between the two tables -- the prime
+ * suspect for a corrupted MIPI transmit timing at the source), plus
+ * 0x3807/0x3811/0x3813 (windowing/ISP offset) and 0x4004 (BLC), which
+ * affect image geometry/black-level rather than PHY lock. Exposure/gain
+ * registers intentionally do NOT match that reference -- see the manual
+ * exposure/gain note below, that's a deliberate difference, not a bug. */
 static const ov5647_reg_t ov5647_640x480_raw8[] =
 {
   /* ---- system / PLL --------------------------------------------------- */
@@ -63,13 +70,19 @@ static const ov5647_reg_t ov5647_640x480_raw8[] =
   { 0x3800, 0x00 }, { 0x3801, 0x00 },   /* X addr start = 0                */
   { 0x3802, 0x00 }, { 0x3803, 0x00 },   /* Y addr start = 0                */
   { 0x3804, 0x0a }, { 0x3805, 0x3f },   /* X addr end   = 2623             */
-  { 0x3806, 0x07 }, { 0x3807, 0xa3 },   /* Y addr end   = 1955             */
+  { 0x3806, 0x07 }, { 0x3807, 0xa1 },   /* Y addr end   = 1953 (was 0xa3/1955 --
+                                            off by 2 rows vs. the verified
+                                            reference table; low-priority
+                                            vs. 0x4837, affects crop
+                                            geometry not PHY lock)        */
   { 0x3808, 0x02 }, { 0x3809, 0x80 },   /* output width  = 640             */
   { 0x380a, 0x01 }, { 0x380b, 0xe0 },   /* output height = 480             */
   { 0x380c, 0x07 }, { 0x380d, 0x68 },   /* HTS (line length)               */
   { 0x380e, 0x03 }, { 0x380f, 0xd8 },   /* VTS (frame length)              */
-  { 0x3810, 0x00 }, { 0x3811, 0x10 },   /* ISP X offset                    */
-  { 0x3812, 0x00 }, { 0x3813, 0x06 },   /* ISP Y offset                    */
+  { 0x3810, 0x00 }, { 0x3811, 0x08 },   /* ISP X offset (was 0x10, verified
+                                            reference uses 0x08)           */
+  { 0x3812, 0x00 }, { 0x3813, 0x02 },   /* ISP Y offset (was 0x06, verified
+                                            reference uses 0x02)           */
   { 0x3814, 0x31 },                     /* X odd/even inc (subsampling)    */
   { 0x3815, 0x31 },                     /* Y odd/even inc (subsampling)    */
   { 0x3708, 0x64 },
@@ -97,10 +110,23 @@ static const ov5647_reg_t ov5647_640x480_raw8[] =
   { 0x3500, 0x00 }, { 0x3501, 0x3d }, { 0x3502, 0x00 },  /* exposure       */
   { 0x350a, 0x00 }, { 0x350b, 0x40 },                    /* gain           */
   { 0x4001, 0x02 },
-  { 0x4004, 0x04 },
+  { 0x4004, 0x02 },   /* BLC line number (was 0x04, verified reference uses 0x02) */
   { 0x4000, 0x09 },
   /* ---- MIPI ------------------------------------------------------------*/
-  { 0x4837, 0x19 },    /* MIPI global timing / pclk period                 */
+  { 0x4837, 0x24 },    /* PCLK_PERIOD (datasheet: "period of pclk2x,
+                          pclk_div=1"). Was 0x19 -- this is a derived
+                          value that must match the PLL config above
+                          (0x3034/0x3035/0x3036/0x303c/0x3106), not an
+                          independent tuning choice, and this project's
+                          PLL config is byte-for-byte identical to the
+                          upstream raspberrypi/linux ov5647.c driver's,
+                          which pairs it with 0x24, not 0x19. A wrong
+                          PCLK_PERIOD corrupts the sensor's own MIPI
+                          transmit timing at the source -- consistent
+                          with the D-PHY receiving near-nothing (mx~2)
+                          regardless of what bitrate/lane/polarity the
+                          STM32 side tries, since the problem would be
+                          upstream of all of that. */
   { 0x4800, 0x04 },    /* MIPI CTRL00: continuous clock (bit5 gating=0).
                           Was 0x24 (gated/non-continuous) -- the STM32N6 CSI
                           D-PHY keeps the clock lane in stop-state with a
@@ -108,7 +134,21 @@ static const ov5647_reg_t ov5647_640x480_raw8[] =
                           as v:0 c:0 Er:0 (no signal at all). If frames still
                           don't land after this, the next suspect is the
                           22-pin adapter's lane/clock wiring, not a register. */
-  { 0x300e, 0x45 },    /* MIPI 2-lane enable                               */
+  /* REMOVED: { 0x300e, 0x45 } was here, commented "MIPI 2-lane enable".
+   * Cross-checked against OV5647's own datasheet (table 6-1): 0x300E is
+   * SC_CMMN_PAD_SEL0, bits[7:4] explicitly marked "Debug control --
+   * Changing these registers is not recommended", bits[3:0] are
+   * io_y_sel[11:8]. It has nothing to do with MIPI lane count. The real
+   * lane-mode/MIPI-enable control is 0x3018 (SC_CMMN_MIPI_SC_CTRL,
+   * bits[7:5] mipi_lane_mode / bit[2] mipi_en), already set correctly
+   * above via { 0x3018, 0x44 } -- confirmed against the upstream
+   * raspberrypi/linux ov5647.c driver's own 640x480 2-lane init table,
+   * which writes this same value. 0x300E is likely a carry-over from a
+   * different OmniVision part (0x300E is the real MIPI control register
+   * on the OV5640, a similarly-named but different sensor) and isn't
+   * touched anywhere in that reference driver, so it's removed here
+   * rather than left poking an undocumented register with unknown
+   * side effects. */
   { 0x4801, 0x0f },
   { 0x300f, 0x88 },
 };

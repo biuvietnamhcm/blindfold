@@ -367,13 +367,28 @@ int main(void)
         }
         else
         {
-          snprintf(line, sizeof(line), "NO LOCK (chk HW)");
+          /* Cumulative Er alone can't tell "real signal the PHY can't
+           * decode" apart from "each of the 253 SetConfig() calls causes
+           * ~1 benign transient error while the PHY re-locks" -- both
+           * look like a few-hundred total by coincidence. max_step_err
+           * (largest error-count delta seen within any SINGLE step's
+           * 120ms dwell) is what actually disambiguates it:
+           *   max_step_err stays tiny (~0-2), close to Er/253 -> every
+           *     step just saw its own reconfig transient, no step saw
+           *     sustained errors -> leans toward "PHY sees nothing real"
+           *     (power/reset/clock-lane/no-connection).
+           *   max_step_err is large (tens+) on some step -> that step's
+           *     whole dwell was full of errors -> genuine signal the PHY
+           *     couldn't decode -> lane-mapping/skew/adapter wiring,
+           *     not a bitrate still left to try. */
+          snprintf(line, sizeof(line), "Er%lu mx%lu",
+                   (unsigned long)er, (unsigned long)scan.max_step_err);
           BSP_LED_On(LED_RED);
         }
         SH1106_FillRectangle(0, 56, SH1106_WIDTH - 1, 56 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
         SH1106_SetCursor(0, 56);
         SH1106_WriteString(line, SH1106_COLOR_WHITE);
-        (void)enc; (void)er;
+        (void)enc;
       }
 #else
       /* Manual bracketing mode: no scan running, just read the counters.

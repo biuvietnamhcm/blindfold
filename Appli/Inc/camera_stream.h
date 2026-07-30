@@ -80,7 +80,7 @@ void CAMERA_STREAM_GetDebugCounts(uint32_t *captured, uint32_t *encoded,
  * fixed. With CAM_CSI_AUTO_SCAN_ENABLE off (below), THIS is the one and
  * only config that gets applied -- edit these two, rebuild, reflash,
  * read v/c/Er, repeat, exactly like round 4's manual bracketing. */
-#define CAM_CSI_PHY_BITRATE    DCMIPP_CSI_PHY_BT_300   /* try _275 / _325 next if this doesn't lock */
+#define CAM_CSI_PHY_BITRATE    DCMIPP_CSI_PHY_BT_325   /* try _275 / _325 next if this doesn't lock */
 #define CAM_CSI_LANE_MAPPING   DCMIPP_CSI_PHYSICAL_DATA_LANES /* or _INVERTED_DATA_LANES */
 
 /* 0 (default): manual bracketing above -- CAMERA_STREAM_Init() applies
@@ -122,6 +122,14 @@ typedef struct
   uint32_t mbps;      /* winning PHYBitrate band, as Mbit/s (valid once locked or mid-scan: currently-tried band) */
   uint32_t lanes;      /* 1 or 2 (winning / currently-tried NumberOfLanes) */
   uint32_t inverted;  /* 0 = PHYSICAL, 1 = INVERTED (winning / current)   */
+  uint32_t max_step_err; /* largest CSI error-count delta seen within any
+                          * single step's 120ms dwell during this scan.
+                          * Small (~0-2) and roughly one-per-step -> those
+                          * errors are just the PHY's own reconfiguration
+                          * transient, not evidence of real signal. Large
+                          * (tens+) on some step -> that step's dwell saw
+                          * sustained errors, i.e. the PHY was actually
+                          * looking at genuine signal it couldn't decode. */
 } CAMERA_STREAM_CSIScanStatusTypeDef;
 
 CAMERA_STREAM_CSIScanStatusTypeDef CAMERA_STREAM_GetCSIScanStatus(void);

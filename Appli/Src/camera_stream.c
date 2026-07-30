@@ -21,32 +21,33 @@
 #include <string.h>
 
 /* ---- Camera control lines (CN6, UM3417 Rev 3 Table 15) --------------
- * The OV5647 module's power is gated by a GPIO that the generated CubeMX
- * code never drives. CAM_PowerUp() below is what actually turns the
- * sensor on; it must run before the first I2C access.
+ * The OV5647 module's power/reset are gated by GPIOs that the generated
+ * CubeMX code never drives. CAM_PowerUp() below is what actually turns
+ * the sensor on; it must run before the first I2C access.
  *
- * IMPORTANT -- CN6 pins 17/18 vs. the generic Pi camera standard:
- * This board's own module (a 15-pin/1mm OV5647 board on a 15-to-22
- * adapter cable) is wired to the generic Raspberry-Pi-ecosystem 22-pin
- * connector standard (same one Pi Zero W / CM IO Board use), where pin
- * 17 = POWER-EN and pin 18 = LED-EN. UM3417's own CN6 table matches that
- * generic standard exactly on every other pin (1-16, 19-22 all line up)
- * but names 17/18 differently: pin 17 = NRST_CAM, pin 18 = PWR_EN. A
- * standard adapter cable wires the module's real power-enable line
- * (its own 15-pin pin 11) straight to 22-pin position 17, and the
- * module's LED line (pin 12) to position 18 -- so on THIS board, PO5
- * (silkscreened "NRST_CAM") is almost certainly the module's real
- * power-enable, and PA0 (silkscreened "PWR_EN") is almost certainly
- * just the LED. Driving PA0 high, as earlier code did, most likely just
- * lights the LED (this is very likely why it lights up on this board
- * and not on a real Pi -- recent Pi boards don't drive that line at
- * all, and the Pi ecosystem never treats it as a power pin to begin
- * with). CAM_PowerUp() below now drives only PO5 and leaves PA0 low,
- * matching what a real Pi actually does with this connector position. */
+ * PATCH NOTE -- a previous revision of this file assumed CN6 pins 17/18
+ * secretly followed the generic Raspberry-Pi-ecosystem 22-pin standard
+ * (pin 17 = POWER-EN, pin 18 = LED-EN, same as Pi Zero W / CM IO Board)
+ * and swapped roles to match, leaving PA0 permanently low. That doesn't
+ * hold up under UM3417 Table 15: pins 11/12/14/15, which the generic
+ * standard reserves for a 3rd/4th CSI data lane pair, are wired on THIS
+ * board to TOF_LPn / TOF_INT / IMU_INT1 / IMU_INT2 instead -- CN6 is a
+ * custom pinout for ST's own camera+IMU+ToF daughterboard, not a
+ * passthrough of the generic Pi standard, so there's no basis for
+ * assuming pins 17/18 alone stayed "generic" while four neighboring
+ * pins didn't. Going with UM3417's own unhedged function column:
+ *   PO5 (CN6 pin 17, silkscreened NRST_CAM) = "Camera module reset"
+ *   PA0 (CN6 pin 18, silkscreened PWR_EN)   = "Camera module enable"
+ * CAM_PowerUp() now drives BOTH, in that order (enable, then release
+ * reset). This can't be verified 100% without the camera module's own
+ * schematic, but it matches the board's own documentation rather than
+ * a guess borrowed from a different vendor's connector, and it's a
+ * strict superset of the previous behavior -- PO5 is still driven
+ * exactly as before, PA0 is just no longer left floating low. */
 #define CAM_PWREN_PORT   GPIOA
-#define CAM_PWREN_PIN    GPIO_PIN_0     /* CN6 pin 18, silkscreened PWR_EN -- on a standard module this is almost certainly just the LED line, not power (see note above) */
+#define CAM_PWREN_PIN    GPIO_PIN_0     /* CN6 pin 18 = PWR_EN -- UM3417 Table 15: "Camera module enable" */
 #define CAM_NRST_PORT    GPIOO
-#define CAM_NRST_PIN     GPIO_PIN_5     /* CN6 pin 17, silkscreened NRST_CAM -- almost certainly the module's real power-enable line (see note above) */
+#define CAM_NRST_PIN     GPIO_PIN_5     /* CN6 pin 17 = NRST_CAM -- UM3417 Table 15: "Camera module reset" */
 
 /* ---- Tunables -------------------------------------------------------- */
 #define JPEG_QUALITY            80U
@@ -404,6 +405,8 @@ static volatile uint32_t s_csi_scan_locked = 0;
 static uint32_t s_csi_scan_step = 0;
 static uint32_t s_csi_scan_deadline = 0;
 static uint32_t s_csi_scan_vsync_baseline = 0;
+static uint32_t s_csi_scan_err_baseline = 0;    /* s_csi_err_count snapshot at the start of the current step's dwell */
+static uint32_t s_csi_scan_max_step_err = 0;    /* largest single-step error delta seen this scan -- see csi_scan_tick() */
 static DCMIPP_CSI_ConfTypeDef s_csi_scan_cfg = {0};   /* current / winning combination */
 
 /* step 0 = whatever main.c is currently built with; step 1.. = the
@@ -434,6 +437,7 @@ static void csi_scan_apply(uint32_t step)
 {
   csi_scan_build_candidate(step, &s_csi_scan_cfg);
   s_csi_scan_vsync_baseline = s_vsync_count;
+  s_csi_scan_err_baseline   = s_csi_err_count;
   (void)HAL_DCMIPP_CSI_SetConfig(s_hdcmipp, &s_csi_scan_cfg);
   s_csi_scan_deadline = HAL_GetTick() + CSI_SCAN_SETTLE_MS;
 }
@@ -448,6 +452,7 @@ static void csi_scan_start(void)
   s_csi_scan_active = 1;
   s_csi_scan_locked = 0;
   s_csi_scan_step = 0;
+  s_csi_scan_max_step_err = 0;
   csi_scan_apply(0);
 #else
   /* Manual mode: apply CAM_CSI_PHY_BITRATE/CAM_CSI_LANE_MAPPING through
@@ -463,6 +468,8 @@ static void csi_scan_start(void)
 
 static void csi_scan_tick(void)
 {
+  uint32_t step_err;
+
   if (!s_csi_scan_active)
   {
     return;
@@ -470,6 +477,18 @@ static void csi_scan_tick(void)
   if ((int32_t)(HAL_GetTick() - s_csi_scan_deadline) < 0)
   {
     return;   /* still settling the current candidate */
+  }
+
+  /* Errors during just THIS step's 120ms dwell, not a lifetime total --
+   * this is what actually distinguishes "every step sees ~1 benign
+   * transient while the PHY re-locks right after SetConfig" (expected
+   * on any hardware, working or not) from "this step saw real, sustained
+   * errors because the PHY is looking at genuine signal it can't
+   * decode." Track the largest such delta across the whole scan. */
+  step_err = s_csi_err_count - s_csi_scan_err_baseline;
+  if (step_err > s_csi_scan_max_step_err)
+  {
+    s_csi_scan_max_step_err = step_err;
   }
 
   if (s_vsync_count != s_csi_scan_vsync_baseline)
@@ -506,6 +525,7 @@ CAMERA_STREAM_CSIScanStatusTypeDef CAMERA_STREAM_GetCSIScanStatus(void)
   s.mbps     = csi_bitrate_mbps[s_csi_scan_cfg.PHYBitrate];
   s.lanes    = (s_csi_scan_cfg.NumberOfLanes == DCMIPP_CSI_TWO_DATA_LANES) ? 2U : 1U;
   s.inverted = (s_csi_scan_cfg.DataLaneMapping == DCMIPP_CSI_INVERTED_DATA_LANES) ? 1U : 0U;
+  s.max_step_err = s_csi_scan_max_step_err;
   return s;
 }
 
@@ -513,15 +533,14 @@ CAMERA_STREAM_CSIScanStatusTypeDef CAMERA_STREAM_GetCSIScanStatus(void)
  * sensor. Timing is deliberately generous: the module's onboard
  * regulators/oscillator need to settle before it will answer on SCCB/I2C.
  *
- * Only PO5 (CN6 pin 17) is driven high -- per the mapping note above,
- * that's the pin a standard 15-to-22 adapter cable connects to the
- * module's real power-enable line. PA0 (CN6 pin 18) is deliberately
- * held low and never asserted: on a standard module that position is
- * the LED line, not power, and a real Pi doesn't drive it either. This
- * is a change from earlier revisions, which drove PA0 high believing it
- * was the enable line -- untested against the CSI lock failure itself
- * yet, but worth ruling in/out since it's the one part of the power
- * path that was never exercised the way a real Pi exercises it. */
+ * Drives both control lines per their documented UM3417 function (see
+ * the file-level PATCH NOTE above for why the "PA0 is just an LED"
+ * theory doesn't hold up): PWR_EN (PA0) high first to enable the
+ * module's power, then NRST_CAM (PO5) high to release reset, each with
+ * its own settle delay. If this specific module's own schematic turns
+ * out to treat one of these lines differently, these two writes are
+ * the only thing that needs to change -- everything downstream just
+ * calls CAM_PowerUp(). */
 static void CAM_PowerUp(void)
 {
   GPIO_InitTypeDef gpio = {0};
@@ -538,8 +557,8 @@ static void CAM_PowerUp(void)
 
   /* Pre-load ODR to the known-off state before switching the pins to
    * outputs, so they don't glitch high during HAL_GPIO_Init(). */
-  HAL_GPIO_WritePin(CAM_PWREN_PORT, CAM_PWREN_PIN, GPIO_PIN_RESET); /* left low -- LED line, see note above */
-  HAL_GPIO_WritePin(CAM_NRST_PORT,  CAM_NRST_PIN,  GPIO_PIN_RESET); /* module held unpowered until asserted below */
+  HAL_GPIO_WritePin(CAM_PWREN_PORT, CAM_PWREN_PIN, GPIO_PIN_RESET); /* module unpowered until asserted below */
+  HAL_GPIO_WritePin(CAM_NRST_PORT,  CAM_NRST_PIN,  GPIO_PIN_RESET); /* module held in reset until released below */
 
   gpio.Mode  = GPIO_MODE_OUTPUT_PP;
   gpio.Pull  = GPIO_NOPULL;
@@ -550,9 +569,10 @@ static void CAM_PowerUp(void)
   HAL_GPIO_Init(CAM_NRST_PORT, &gpio);
 
   HAL_Delay(5);
-  HAL_GPIO_WritePin(CAM_NRST_PORT, CAM_NRST_PIN, GPIO_PIN_SET);  /* real enable line, asserted */
-  HAL_Delay(30);                                                  /* regulators/oscillator settle, sensor boot */
-  /* CAM_PWREN_PIN (PA0) intentionally never set high -- see note above. */
+  HAL_GPIO_WritePin(CAM_PWREN_PORT, CAM_PWREN_PIN, GPIO_PIN_SET);  /* PWR_EN asserted -- UM3417: "Camera module enable" */
+  HAL_Delay(10);                                                    /* let the module's onboard regulators come up */
+  HAL_GPIO_WritePin(CAM_NRST_PORT, CAM_NRST_PIN, GPIO_PIN_SET);    /* NRST_CAM released -- UM3417: "Camera module reset" */
+  HAL_Delay(30);                                                    /* sensor boot / oscillator settle before I2C */
 }
 
 /* ---- Public API --------------------------------------------------------*/
