@@ -86,6 +86,14 @@ static void cache_invalidate(const void *addr, uint32_t len)
   SCB_InvalidateDCache_by_Addr((void *)start, (int32_t)(end - start));
 }
 
+
+
+
+volatile uint8_t g_ov5647_reg_0100 = 0xFFU;
+volatile uint8_t g_ov5647_reg_4800 = 0xFFU;
+volatile uint8_t g_ov5647_reg_3018 = 0xFFU;
+volatile uint8_t g_ov5647_read_errors = 0xFFU;
+
 /* ---- I2C2 IO shim for the OV5647 driver -------------------------------*/
 static I2C_HandleTypeDef *s_hi2c2;
 
@@ -621,7 +629,16 @@ CAMERA_STREAM_StatusTypeDef CAMERA_STREAM_Init(I2C_HandleTypeDef *hi2c2,
   {
     return CAMERA_STREAM_ERROR_SENSOR_INIT;
   }
+  g_ov5647_read_errors = 0U;
 
+  if (OV5647_ReadReg(&s_cam, 0x0100U, &g_ov5647_reg_0100) != OV5647_OK)
+    g_ov5647_read_errors |= 1U;
+
+  if (OV5647_ReadReg(&s_cam, 0x4800U, &g_ov5647_reg_4800) != OV5647_OK)
+    g_ov5647_read_errors |= 2U;
+
+  if (OV5647_ReadReg(&s_cam, 0x3018U, &g_ov5647_reg_3018) != OV5647_OK)
+    g_ov5647_read_errors |= 4U;
   /* RAW8 Bayer -> RGB565 needs the Pipe1 ISP demosaicing (RawBayer2RGB)
    * block explicitly configured and enabled. MX_DCMIPP_Init() sets the
    * pixel packer to RGB565 but the demosaic block defaults to bypassed,
