@@ -81,7 +81,7 @@ void CAMERA_STREAM_GetDebugCounts(uint32_t *captured, uint32_t *encoded,
  * only config that gets applied -- edit these two, rebuild, reflash,
  * read v/c/Er, repeat, exactly like round 4's manual bracketing. */
 #define CAM_CSI_PHY_BITRATE    DCMIPP_CSI_PHY_BT_325   /* try _275 / _325 next if this doesn't lock */
-#define CAM_CSI_LANE_MAPPING   DCMIPP_CSI_PHYSICAL_DATA_LANES /* or _INVERTED_DATA_LANES */
+#define CAM_CSI_LANE_MAPPING   DCMIPP_CSI_INVERTED_DATA_LANES /* or _INVERTED_DATA_LANES */
 
 /* 0 (default): manual bracketing above -- CAMERA_STREAM_Init() applies
  *   CAM_CSI_PHY_BITRATE/CAM_CSI_LANE_MAPPING (2 lanes) once and stops.

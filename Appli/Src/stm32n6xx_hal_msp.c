@@ -98,8 +98,44 @@ void HAL_DCMIPP_MspInit(DCMIPP_HandleTypeDef* hdcmipp)
   */
     PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_DCMIPP|RCC_PERIPHCLK_CSI;
     PeriphClkInitStruct.DcmippClockSelection = RCC_DCMIPPCLKSOURCE_PCLK5;
+    /* FIX -- this is why CSI could never lock: IC18 must already be at its
+     * final ~20 MHz (PLL4/80) *before* CSI's clock-enable/reset just below,
+     * not after. CSI_CLK_ENABLE() + CSI_FORCE_RESET()/RELEASE_RESET() run
+     * immediately below using whatever config this call just applied --
+     * this project used to apply ClockDivider = 1 here (straight PLL4 =
+     * 1.6 GHz, confirmed via RedEye.ioc RCC.FOUTPOSTDIV4Freq_Value /
+     * VCO4OutputFreq_Value), enable/reset CSI at that 1.6 GHz rate, and
+     * only correct IC18 to /80 afterwards, in USER CODE section 1 below --
+     * too late to matter, since the D-PHY had already been reset while
+     * clocked 80x too fast.
+     *
+     * That IC18 must land at ~20 MHz specifically (not just "some sane
+     * clock") is confirmed by two independent ST sources:
+     *   - ST's own STM32N6570-DK TouchGFX+camera integration guide
+     *     (community.st.com, section 4.5 "Clock configuration"): the CSI
+     *     interface is physically wired to IC18, capped at 20 MHz.
+     *   - The STM32CubeMX 6.14.x errata (STM32N6 section) documents
+     *     CubeMX's generated code for DCMIPP+CSI as missing this clock
+     *     setup entirely, and gives the fix as setting IC18 to ~20 MHz
+     *     (their worked example: PLL1/60) inside USER CODE BEGIN
+     *     DCMIPP_MspInit 0 -- i.e. before CSI_CLK_ENABLE, exactly where
+     *     this now lives. PLL4/80 (this project's existing PLL4 source)
+     *     lands on the same ~20 MHz target as ST's PLL1/60 example, so it
+     *     was kept rather than switching PLLs.
+     *
+     * CAUTION -- this line can regress silently: RedEye.ioc has no
+     * explicit IC18 divider in RCC.IPParameters (only IC1/IC2/IC11 do --
+     * IC18Freq_VALUE at line 508 is just a cached display value, currently
+     * still 1600000000, i.e. still describing the old div=1 behavior). A
+     * future CubeMX "Generate Code" could rewrite ClockDivider back to 1
+     * here, and -- unlike a re-assertion later in a USER CODE block --
+     * nothing downstream can catch that in time, because the damage (CSI
+     * enabled/reset at the wrong rate) happens the instant the calls just
+     * below this run. If you ever regenerate from CubeMX, re-check this
+     * value, or better, set IC18 = PLL4 / 80 directly in CubeMX's Clock
+     * Configuration GUI so CubeMX itself keeps it correct. */
     PeriphClkInitStruct.ICSelection[RCC_IC18].ClockSelection = RCC_ICCLKSOURCE_PLL4;
-    PeriphClkInitStruct.ICSelection[RCC_IC18].ClockDivider = 1;
+    PeriphClkInitStruct.ICSelection[RCC_IC18].ClockDivider = 80;
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
     {
       Error_Handler();
@@ -115,26 +151,13 @@ void HAL_DCMIPP_MspInit(DCMIPP_HandleTypeDef* hdcmipp)
     HAL_NVIC_EnableIRQ(DCMIPP_IRQn);
     /* USER CODE BEGIN DCMIPP_MspInit 1 */
 
-    /* RedEye.ioc's Clock Configuration does NOT know about the /80 fix
-     * above yet -- its own cached RCC.IC18Freq_VALUE is still 1600000000
-     * (confirmed by grep: no IC18 divider is tracked in the ioc's
-     * IPParameters, only IC1/IC2/IC11 have one). That means the
-     * ClockDivider=80 line above is a hand-edit sitting in CubeMX-
-     * regenerated territory -- exactly the same class of problem as the
-     * ETH1 RIF fix in SystemIsolation_Config() below, and the same fix:
-     * re-assert it here so the next "Generate Code" (for something
-     * completely unrelated, e.g. adding a GPIO) can't silently put IC18
-     * back to 1600 MHz and reintroduce the v:0 c:0 Er:0 no-signal
-     * symptom. Still worth setting properly in CubeMX's Clock
-     * Configuration (find "IC18", source PLL4, divider 80) so this stops
-     * being defensive and becomes the actual source of truth. */
-    PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_CSI;
-    PeriphClkInitStruct.ICSelection[RCC_IC18].ClockSelection = RCC_ICCLKSOURCE_PLL4;
-    PeriphClkInitStruct.ICSelection[RCC_IC18].ClockDivider = 80;
-    if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
-    {
-      Error_Handler();
-    }
+    /* The old "apply IC18=80 again here" block that used to live at the
+     * top of this section is gone: it always ran after CSI_CLK_ENABLE/
+     * FORCE_RESET/RELEASE_RESET above had already used whatever IC18 was
+     * set to, so re-applying the divider here could never undo that.
+     * IC18 is now set correctly before CSI is touched at all -- see the
+     * comment above DCMIPP_MspInit's clock config, including the
+     * regeneration caveat. */
 
     /* CSI is a SEPARATE NVIC vector from DCMIPP. HAL_DCMIPP_CSI_SetConfig()
      * enables the CSI D-PHY / sync / line-error interrupts, but without
