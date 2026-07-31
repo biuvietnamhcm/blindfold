@@ -93,7 +93,7 @@ void CAMERA_STREAM_GetDebugCounts(uint32_t *captured, uint32_t *encoded,
  * 1: round 5's auto-scan -- walk all 253 PHYBitrate x DataLaneMapping x
  *   NumberOfLanes combinations if the manual value above doesn't lock
  *   within ~120ms. See the block below for exactly how. */
-#define CAM_CSI_AUTO_SCAN_ENABLE  0
+#define CAM_CSI_AUTO_SCAN_ENABLE  1
 
 /* ---- CSI auto-negotiation ----------------------------------------------
  * Only runs when CAM_CSI_AUTO_SCAN_ENABLE (above) is 1. CAMERA_STREAM_Init()

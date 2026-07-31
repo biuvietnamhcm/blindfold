@@ -723,6 +723,18 @@ static void MX_JPEG_Init(void)
   HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_CSI , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
   HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_DCMIPP , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
   HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_JPEG , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
+  /* ADDED -- I2C2 (the sensor's SCCB/I2C bus) has a valid RIF slave index
+   * (RIF_RISC_PERIPH_INDEX_I2C2, confirmed in stm32n6xx_hal_rif.h) just
+   * like CSI/DCMIPP/JPEG/ETH1 above, all of which needed an explicit
+   * grant here -- but nothing in this project ever granted it. Whether
+   * I2C2's reset-default state actually blocks anything is unconfirmed
+   * (unlike the CSI/DCMIPP/ETH1 cases, which were each independently
+   * traced to a real symptom); this is a preventive match to its sibling
+   * peripherals, not a confirmed fix. If g_ov5647_read_errors is ever
+   * non-zero, or the sensor ID probe in CAMERA_STREAM_Init() reports
+   * "FAIL" despite CAM_PowerUp() completing, this line is now already
+   * ruled in rather than still needing to be discovered. */
+  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_I2C2 , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
 
   /* RIF-Aware IPs Config */
 
