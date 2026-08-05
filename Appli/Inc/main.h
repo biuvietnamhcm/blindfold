@@ -112,6 +112,10 @@ extern ETH_TxPacketConfigTypeDef TxConfig;
 #define I2C1_SDA_GPIO_Port GPIOC
 #define I2CA_SCL_Pin GPIO_PIN_9
 #define I2CA_SCL_GPIO_Port GPIOH
+#define I2C2_SDA_Pin GPIO_PIN_11
+#define I2C2_SDA_GPIO_Port GPIOB
+#define I2C2_SCL_Pin GPIO_PIN_10
+#define I2C2_SCL_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

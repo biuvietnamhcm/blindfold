@@ -72,9 +72,16 @@ ETH_TxPacketConfigTypeDef TxConfig;
 
 COM_InitTypeDef BspCOMInit;
 
+DCMIPP_HandleTypeDef hdcmipp;
+
 ETH_HandleTypeDef heth1;
 
 I2C_HandleTypeDef hi2c1;
+I2C_HandleTypeDef hi2c2;
+
+JPEG_HandleTypeDef hjpeg;
+
+SPI_HandleTypeDef hspi5;
 
 /* USER CODE BEGIN PV */
 struct netif gnetif;
@@ -84,6 +91,10 @@ struct netif gnetif;
 static void MX_GPIO_Init(void);
 static void MX_ETH1_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_DCMIPP_Init(void);
+static void MX_JPEG_Init(void);
+static void MX_I2C2_Init(void);
+static void MX_SPI5_Init(void);
 static void SystemIsolation_Config(void);
 /* USER CODE BEGIN PFP */
 static void Netif_Config(void);
@@ -129,6 +140,9 @@ int main(void)
   MX_GPIO_Init();
   MX_ETH1_Init();
   MX_I2C1_Init();
+  MX_DCMIPP_Init();
+  MX_I2C2_Init();
+  MX_SPI5_Init();
   SystemIsolation_Config();
   /* USER CODE BEGIN 2 */
 
@@ -246,6 +260,61 @@ int main(void)
 }
 
 /**
+  * @brief DCMIPP Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_DCMIPP_Init(void)
+{
+
+  /* USER CODE BEGIN DCMIPP_Init 0 */
+
+  /* USER CODE END DCMIPP_Init 0 */
+
+  DCMIPP_CSI_PIPE_ConfTypeDef pCSI_PipeConfig = {0};
+  DCMIPP_CSI_ConfTypeDef pCSI_Config = {0};
+  DCMIPP_PipeConfTypeDef pPipeConfig = {0};
+
+  /* USER CODE BEGIN DCMIPP_Init 1 */
+
+  /* USER CODE END DCMIPP_Init 1 */
+  hdcmipp.Instance = DCMIPP;
+  if (HAL_DCMIPP_Init(&hdcmipp) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Pipe 1 Config
+  */
+  pCSI_PipeConfig.DataTypeMode = DCMIPP_DTMODE_DTIDA;
+  pCSI_PipeConfig.DataTypeIDA = DCMIPP_DT_RAW8;
+  pCSI_PipeConfig.DataTypeIDB = DCMIPP_DT_RAW8;
+  if (HAL_DCMIPP_CSI_PIPE_SetConfig(&hdcmipp, DCMIPP_PIPE1, &pCSI_PipeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  pCSI_Config.PHYBitrate = DCMIPP_CSI_PHY_BT_80;
+  pCSI_Config.DataLaneMapping = DCMIPP_CSI_PHYSICAL_DATA_LANES;
+  pCSI_Config.NumberOfLanes = DCMIPP_CSI_TWO_DATA_LANES;
+  HAL_DCMIPP_CSI_SetConfig(&hdcmipp, &pCSI_Config);
+  pPipeConfig.FrameRate = DCMIPP_FRAME_RATE_ALL;
+  pPipeConfig.PixelPipePitch = 1280;
+  pPipeConfig.PixelPackerFormat = DCMIPP_PIXEL_PACKER_FORMAT_RGB565_1;
+  if (HAL_DCMIPP_PIPE_SetConfig(&hdcmipp, DCMIPP_PIPE1, &pPipeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_DCMIPP_CSI_SetVCConfig(&hdcmipp, 0U, DCMIPP_CSI_DT_BPP8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN DCMIPP_Init 2 */
+
+  /* USER CODE END DCMIPP_Init 2 */
+
+}
+
+/**
   * @brief ETH1 Initialization Function
   * @param None
   * @retval None
@@ -346,6 +415,80 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief I2C2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C2_Init(void)
+{
+
+  /* USER CODE BEGIN I2C2_Init 0 */
+
+  /* USER CODE END I2C2_Init 0 */
+
+  /* USER CODE BEGIN I2C2_Init 1 */
+
+  /* USER CODE END I2C2_Init 1 */
+  hi2c2.Instance = I2C2;
+  hi2c2.Init.Timing = 0x30C0EDFF;
+  hi2c2.Init.OwnAddress1 = 0;
+  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c2.Init.OwnAddress2 = 0;
+  hi2c2.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Analogue filter
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c2, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Digital filter
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c2, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C2_Init 2 */
+
+  /* USER CODE END I2C2_Init 2 */
+
+}
+
+/**
+  * @brief JPEG Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_JPEG_Init(void)
+{
+
+  /* USER CODE BEGIN JPEG_Init 0 */
+
+  /* USER CODE END JPEG_Init 0 */
+
+  /* USER CODE BEGIN JPEG_Init 1 */
+
+  /* USER CODE END JPEG_Init 1 */
+  hjpeg.Instance = JPEG;
+  if (HAL_JPEG_Init(&hjpeg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN JPEG_Init 2 */
+
+  /* USER CODE END JPEG_Init 2 */
+
+}
+
+/**
   * @brief RIF Initialization Function
   * @param None
   * @retval None
@@ -363,8 +506,17 @@ static void MX_I2C1_Init(void)
   /*RIMC configuration*/
   RIMC_MasterConfig_t RIMC_master = {0};
   RIMC_master.MasterCID = RIF_CID_1;
+  RIMC_master.SecPriv = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV;
+  HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_DCMIPP, &RIMC_master);
+
   RIMC_master.SecPriv = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_NPRIV;
   HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_ETH1, &RIMC_master);
+
+  /*RISUP configuration*/
+  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_SPI5 , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
+  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_CSI , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
+  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_DCMIPP , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
+  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_JPEG , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
 
   /* RIF-Aware IPs Config */
 
@@ -378,38 +530,67 @@ static void MX_I2C1_Init(void)
   HAL_GPIO_ConfigPinAttributes(GPIOB,GPIO_PIN_10,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOB,GPIO_PIN_11,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOC,GPIO_PIN_1,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(GPIOD,GPIO_PIN_4,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOE,GPIO_PIN_3,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(GPIOE,GPIO_PIN_15,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(GPIOH,GPIO_PIN_6,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(GPIOH,GPIO_PIN_7,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOH,GPIO_PIN_9,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
 
   /* USER CODE BEGIN RIF_Init 1 */
 
-  /* CubeMX regenerates the block above with RIF_ATTRIBUTE_NPRIV and no
-   * slave-side call every time "Generate Code" runs -- that's what
-   * silently happened here. Re-applying both fixes inside this USER
-   * CODE block means they survive the next regeneration instead of
-   * quietly disappearing again.
-   *
-   * (1) ETH1 DMA master needs PRIVILEGED, not NPRIV: with NPRIV, ETH
-   * DMA transactions can be silently fenced by the RIF security fabric
-   * -- HAL calls report success and the TX descriptor's OWN bit gets
-   * set by software, but the actual DMA bus transaction to fetch/
-   * consume that descriptor never happens, so nothing reaches the PHY.
-   */
-  RIMC_master.SecPriv = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV;
-  HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_ETH1, &RIMC_master);
-
-  /* (2) ETH1's own (slave-side) RIF security attribute is never set by
-   * the generated block above -- only the master (RIMC) side and the
-   * GPIO pins are. Left at its reset default, it can end up mismatched
-   * against the master attribute and the Secure memory the DMA
-   * descriptors/buffers live in (see the 0x34100000 placement of
-   * DMARxDscrTab/DMATxDscrTab), which is exactly the kind of gap that
-   * causes DMA to silently stall instead of erroring out. */
-  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_ETH1, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_NPRIV);
-
+  /* USER CODE END RIF_Init 1 */
   /* USER CODE BEGIN RIF_Init 2 */
 
   /* USER CODE END RIF_Init 2 */
+
+}
+
+/**
+  * @brief SPI5 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI5_Init(void)
+{
+
+  /* USER CODE BEGIN SPI5_Init 0 */
+
+  /* USER CODE END SPI5_Init 0 */
+
+  /* USER CODE BEGIN SPI5_Init 1 */
+
+  /* USER CODE END SPI5_Init 1 */
+  /* SPI5 parameter configuration*/
+  hspi5.Instance = SPI5;
+  hspi5.Init.Mode = SPI_MODE_MASTER;
+  hspi5.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi5.Init.DataSize = SPI_DATASIZE_4BIT;
+  hspi5.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi5.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi5.Init.NSS = SPI_NSS_HARD_INPUT;
+  hspi5.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi5.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi5.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi5.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi5.Init.CRCPolynomial = 0x7;
+  hspi5.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
+  hspi5.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
+  hspi5.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
+  hspi5.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
+  hspi5.Init.MasterInterDataIdleness = SPI_MASTER_INTERDATA_IDLENESS_00CYCLE;
+  hspi5.Init.MasterReceiverAutoSusp = SPI_MASTER_RX_AUTOSUSP_DISABLE;
+  hspi5.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_DISABLE;
+  hspi5.Init.IOSwap = SPI_IO_SWAP_DISABLE;
+  hspi5.Init.ReadyMasterManagement = SPI_RDY_MASTER_MANAGEMENT_INTERNALLY;
+  hspi5.Init.ReadyPolarity = SPI_RDY_POLARITY_HIGH;
+  if (HAL_SPI_Init(&hspi5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI5_Init 2 */
+
+  /* USER CODE END SPI5_Init 2 */
 
 }
 
@@ -426,7 +607,9 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
