@@ -522,13 +522,13 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* hspi)
     __HAL_RCC_SPI5_CLK_ENABLE();
 
     __HAL_RCC_GPIOE_CLK_ENABLE();
-    __HAL_RCC_GPIOH_CLK_ENABLE();
-    __HAL_RCC_GPIOD_CLK_ENABLE();
+    __HAL_RCC_GPIOG_CLK_ENABLE();
+    __HAL_RCC_GPIOA_CLK_ENABLE();
     /**SPI5 GPIO Configuration
     PE15     ------> SPI5_SCK
-    PH6     ------> SPI5_NSS
-    PD4     ------> SPI5_MISO
-    PH7     ------> SPI5_MOSI
+    PG1     ------> SPI5_MISO
+    PA3     ------> SPI5_NSS
+    PG2     ------> SPI5_MOSI
     */
     GPIO_InitStruct.Pin = GPIO_PIN_15;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
@@ -537,19 +537,19 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* hspi)
     GPIO_InitStruct.Alternate = GPIO_AF5_SPI5;
     HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
-    GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7;
+    GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_2;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Alternate = GPIO_AF5_SPI5;
-    HAL_GPIO_Init(GPIOH, &GPIO_InitStruct);
+    HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
 
-    GPIO_InitStruct.Pin = GPIO_PIN_4;
+    GPIO_InitStruct.Pin = GPIO_PIN_3;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Alternate = GPIO_AF5_SPI5;
-    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
     /* USER CODE BEGIN SPI5_MspInit 1 */
 
@@ -577,15 +577,15 @@ void HAL_SPI_MspDeInit(SPI_HandleTypeDef* hspi)
 
     /**SPI5 GPIO Configuration
     PE15     ------> SPI5_SCK
-    PH6     ------> SPI5_NSS
-    PD4     ------> SPI5_MISO
-    PH7     ------> SPI5_MOSI
+    PG1     ------> SPI5_MISO
+    PA3     ------> SPI5_NSS
+    PG2     ------> SPI5_MOSI
     */
     HAL_GPIO_DeInit(GPIOE, GPIO_PIN_15);
 
-    HAL_GPIO_DeInit(GPIOH, GPIO_PIN_6|GPIO_PIN_7);
+    HAL_GPIO_DeInit(GPIOG, GPIO_PIN_1|GPIO_PIN_2);
 
-    HAL_GPIO_DeInit(GPIOD, GPIO_PIN_4);
+    HAL_GPIO_DeInit(GPIOA, GPIO_PIN_3);
 
     /* USER CODE BEGIN SPI5_MspDeInit 1 */
 

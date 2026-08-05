@@ -141,6 +141,7 @@ int main(void)
   MX_ETH1_Init();
   MX_I2C1_Init();
   MX_DCMIPP_Init();
+  MX_JPEG_Init();
   MX_I2C2_Init();
   MX_SPI5_Init();
   SystemIsolation_Config();
@@ -382,7 +383,7 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x30C0EDFF;
+  hi2c1.Init.Timing = 0x10C0ECFF;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -430,7 +431,7 @@ static void MX_I2C2_Init(void)
 
   /* USER CODE END I2C2_Init 1 */
   hi2c2.Instance = I2C2;
-  hi2c2.Init.Timing = 0x30C0EDFF;
+  hi2c2.Init.Timing = 0x10C0ECFF;
   hi2c2.Init.OwnAddress1 = 0;
   hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -521,6 +522,7 @@ static void MX_JPEG_Init(void)
   /* RIF-Aware IPs Config */
 
   /* set up GPIO configuration */
+  HAL_GPIO_ConfigPinAttributes(GPIOA,GPIO_PIN_3,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOA,GPIO_PIN_10,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOA,GPIO_PIN_11,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOB,GPIO_PIN_0,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
@@ -530,11 +532,10 @@ static void MX_JPEG_Init(void)
   HAL_GPIO_ConfigPinAttributes(GPIOB,GPIO_PIN_10,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOB,GPIO_PIN_11,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOC,GPIO_PIN_1,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
-  HAL_GPIO_ConfigPinAttributes(GPIOD,GPIO_PIN_4,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOE,GPIO_PIN_3,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOE,GPIO_PIN_15,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
-  HAL_GPIO_ConfigPinAttributes(GPIOH,GPIO_PIN_6,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
-  HAL_GPIO_ConfigPinAttributes(GPIOH,GPIO_PIN_7,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(GPIOG,GPIO_PIN_1,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
+  HAL_GPIO_ConfigPinAttributes(GPIOG,GPIO_PIN_2,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
   HAL_GPIO_ConfigPinAttributes(GPIOH,GPIO_PIN_9,GPIO_PIN_SEC|GPIO_PIN_NPRIV);
 
   /* USER CODE BEGIN RIF_Init 1 */
@@ -563,18 +564,17 @@ static void MX_SPI5_Init(void)
   /* USER CODE END SPI5_Init 1 */
   /* SPI5 parameter configuration*/
   hspi5.Instance = SPI5;
-  hspi5.Init.Mode = SPI_MODE_MASTER;
-  hspi5.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi5.Init.DataSize = SPI_DATASIZE_4BIT;
+  hspi5.Init.Mode = SPI_MODE_SLAVE;
+  hspi5.Init.Direction = SPI_DIRECTION_2LINES_RXONLY;
+  hspi5.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi5.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi5.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi5.Init.NSS = SPI_NSS_HARD_INPUT;
-  hspi5.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi5.Init.NSS = SPI_NSS_SOFT;
   hspi5.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi5.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi5.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
   hspi5.Init.CRCPolynomial = 0x7;
-  hspi5.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
+  hspi5.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
   hspi5.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
   hspi5.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
   hspi5.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
@@ -609,10 +609,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
