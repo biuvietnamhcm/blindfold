@@ -23,7 +23,7 @@ extern "C" {
  * this header doesn't have to pull in lwIP's tcp.h. */
 int8_t MJPEG_SERVER_Init(uint16_t port);
 
-/* Call every iteration of the main loop, same as CAMERA_STREAM_Process().
+/* Call every iteration of the main loop, same as FRAME_SOURCE_Process().
  * This is what notices a new camera frame is ready and pushes it to any
  * connection that's currently idle waiting for one -- lwIP's own tcp_sent
  * callback handles resuming a send that stalled on a full TCP window, but

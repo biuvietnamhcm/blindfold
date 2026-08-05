@@ -70,8 +70,6 @@ static void Fault_Blink(int times)
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
-extern DCMIPP_HandleTypeDef hdcmipp;
-extern JPEG_HandleTypeDef hjpeg;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -228,67 +226,6 @@ void SysTick_Handler(void)
 /* For the available peripheral interrupt handler names,                      */
 /* please refer to the startup file (startup_stm32n6xx.s).                    */
 /******************************************************************************/
-
-/**
-  * @brief This function handles CSI global interrupt.
-  */
-void CSI_IRQHandler(void)
-{
-  /* USER CODE BEGIN CSI_IRQn 0 */
-
-  /* USER CODE END CSI_IRQn 0 */
-  /* The CSI D-PHY / sync / line-error interrupts are a SEPARATE NVIC vector
-   * (47) from DCMIPP (48). Without this handler + the matching
-   * HAL_NVIC_EnableIRQ(CSI_IRQn) in HAL_DCMIPP_MspInit(), the error IRQs
-   * that HAL_DCMIPP_CSI_SetConfig() enables (SYNCERR, D-PHY line errors,
-   * ...) are never serviced -- so the "Er" bring-up counter can never
-   * increment and a real bit-rate/lane mismatch reads as Er:0.
-   *
-   * This function itself is proof CubeMX regeneration can silently drop
-   * whole hand-added functions, not just revert values: CSI_IRQn's NVIC
-   * enable lives in a USER CODE section in msp.c (defensively, so it
-   * survives regen), but CubeMX's own model of "which IRQs exist" never
-   * knew about it, so when stm32n6xx_it.c got regenerated for the RIF
-   * change, this entire handler was dropped rather than just reverted --
-   * and unlike a reverted value, a *missing handler* for an IRQ that
-   * fires constantly (which CSI's does, throughout this whole bring-up)
-   * means the CPU vectors into the default weak handler and hangs on the
-   * very first CSI interrupt. If you enable CSI_IRQn through CubeMX's own
-   * NVIC configuration tab (not just leave the enable call in msp.c),
-   * CubeMX will know to keep regenerating this stub itself. */
-  HAL_DCMIPP_CSI_IRQHandler(&hdcmipp);
-  /* USER CODE BEGIN CSI_IRQn 1 */
-
-  /* USER CODE END CSI_IRQn 1 */
-}
-
-/**
-  * @brief This function handles DCMIPP global interrupt.
-  */
-void DCMIPP_IRQHandler(void)
-{
-  /* USER CODE BEGIN DCMIPP_IRQn 0 */
-
-  /* USER CODE END DCMIPP_IRQn 0 */
-  HAL_DCMIPP_IRQHandler(&hdcmipp);
-  /* USER CODE BEGIN DCMIPP_IRQn 1 */
-
-  /* USER CODE END DCMIPP_IRQn 1 */
-}
-
-/**
-  * @brief This function handles JPEG global interrupt.
-  */
-void JPEG_IRQHandler(void)
-{
-  /* USER CODE BEGIN JPEG_IRQn 0 */
-
-  /* USER CODE END JPEG_IRQn 0 */
-  HAL_JPEG_IRQHandler(&hjpeg);
-  /* USER CODE BEGIN JPEG_IRQn 1 */
-
-  /* USER CODE END JPEG_IRQn 1 */
-}
 
 /* USER CODE BEGIN 1 */
 

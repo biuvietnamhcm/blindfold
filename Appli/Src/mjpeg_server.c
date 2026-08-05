@@ -20,7 +20,7 @@
   ******************************************************************************
   */
 #include "mjpeg_server.h"
-#include "camera_stream.h"
+#include "frame_source.h"
 #include "lwip/tcp.h"
 #include <string.h>
 #include <stdio.h>
@@ -50,7 +50,7 @@ typedef struct
   uint16_t         msg_len;
   uint16_t         msg_sent;
 
-  uint8_t         *frame_data;   /* locked via CAMERA_STREAM_GetLatestJPEG */
+  uint8_t         *frame_data;   /* locked via FRAME_SOURCE_GetLatestJPEG */
   uint32_t         frame_len;
   uint32_t         frame_sent;
   uint32_t         last_frame_id;
@@ -68,7 +68,7 @@ static void mjpeg_conn_release(mjpeg_conn_t *c)
 {
   if (c->frame_data != NULL)
   {
-    CAMERA_STREAM_ReleaseJPEG(c->frame_data);
+    FRAME_SOURCE_ReleaseJPEG(c->frame_data);
     c->frame_data = NULL;
   }
   c->in_use = 0;
@@ -124,7 +124,7 @@ static void mjpeg_conn_pump(mjpeg_conn_t *c)
         uint8_t *data;
         uint32_t len, fid;
 
-        if (CAMERA_STREAM_GetLatestJPEG(c->last_frame_id, &data, &len, &fid) == 0U)
+        if (FRAME_SOURCE_GetLatestJPEG(c->last_frame_id, &data, &len, &fid) == 0U)
         {
           c->last_frame_id = fid;
           return; /* nothing new yet -- MJPEG_SERVER_Poll() will retry */
@@ -167,7 +167,7 @@ static void mjpeg_conn_pump(mjpeg_conn_t *c)
 
         if (remain == 0U)
         {
-          CAMERA_STREAM_ReleaseJPEG(c->frame_data);
+          FRAME_SOURCE_ReleaseJPEG(c->frame_data);
           c->frame_data = NULL;
           c->msg[0] = '\r'; c->msg[1] = '\n';
           c->msg_len = 2U;

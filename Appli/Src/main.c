@@ -31,7 +31,7 @@
 #include "ethernetif.h"
 #include "app_ethernet.h"
 #include "net_display.h"
-#include "camera_stream.h"
+#include "frame_source.h"
 #include "mjpeg_server.h"
 /* USER CODE END Includes */
 
@@ -42,12 +42,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
-/* CAM_CSI_PHY_BITRATE / CAM_CSI_LANE_MAPPING moved to camera_stream.h:
- * camera_stream.c's auto-scan (round 5) needs them as its step-0
- * candidate, and this file isn't a shared header. Full history (the
- * round-4 HAL bug, why BT_300, the round-5 auto-scan) is there and in
- * CAMERA_INTEGRATION.md. */
 
 /* USER CODE END PD */
 
@@ -78,14 +72,9 @@ ETH_TxPacketConfigTypeDef TxConfig;
 
 COM_InitTypeDef BspCOMInit;
 
-DCMIPP_HandleTypeDef hdcmipp;
-
 ETH_HandleTypeDef heth1;
 
 I2C_HandleTypeDef hi2c1;
-I2C_HandleTypeDef hi2c2;
-
-JPEG_HandleTypeDef hjpeg;
 
 /* USER CODE BEGIN PV */
 struct netif gnetif;
@@ -95,13 +84,9 @@ struct netif gnetif;
 static void MX_GPIO_Init(void);
 static void MX_ETH1_Init(void);
 static void MX_I2C1_Init(void);
-static void MX_DCMIPP_Init(void);
-static void MX_JPEG_Init(void);
-static void MX_I2C2_Init(void);
 static void SystemIsolation_Config(void);
 /* USER CODE BEGIN PFP */
 static void Netif_Config(void);
-static void BlinkBlue(uint8_t count);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -133,9 +118,9 @@ int main(void)
 
   /* RIF grants must land before any peripheral driven by CID1 touches
    * its own registers -- SystemIsolation_Config() is auto-called again
-   * later (after MX_DCMIPP_Init()/MX_JPEG_Init()) by CubeMX's generated
-   * sequence; calling it here too, first, fixes that ordering. The
-   * later call just re-applies the same config, which is harmless. */
+   * later (after MX_ETH1_Init()) by CubeMX's generated sequence; calling
+   * it here too, first, fixes that ordering. The later call just
+   * re-applies the same config, which is harmless. */
   SystemIsolation_Config();
 
   /* USER CODE END SysInit */
@@ -144,9 +129,6 @@ int main(void)
   MX_GPIO_Init();
   MX_ETH1_Init();
   MX_I2C1_Init();
-  MX_DCMIPP_Init();
-  MX_JPEG_Init();
-  MX_I2C2_Init();
   SystemIsolation_Config();
   /* USER CODE BEGIN 2 */
 
@@ -167,23 +149,6 @@ int main(void)
     SH1106_Fill(SH1106_COLOR_BLACK);
     SH1106_SetCursor(0, 0);
     SH1106_WriteString("BlindFold", SH1106_COLOR_WHITE);
-
-    /* Row 8 is the one row on this display nothing else claims (0=title,
-     * 16/24/32=net_display.c, 40=net debug, 48/56=main loop below) -- see
-     * chat notes on the y=32 collision with the CAM: status line.
-     *
-     * This line reads the same two macros MX_DCMIPP_Init() actually
-     * assigns into pCSI_Config a few lines below, so it always shows
-     * what THIS BINARY was built with, not what main.c currently says on
-     * someone's disk. Cross-check against the table in this thread:
-     * PHY 16/17/18/20 = BT_275/300/325/400, LANE 1/2 = physical/inverted. */
-    {
-      char build_line[17];
-      snprintf(build_line, sizeof(build_line), "PHY:%lu LN:%lu",
-                (unsigned long)CAM_CSI_PHY_BITRATE, (unsigned long)CAM_CSI_LANE_MAPPING);
-      SH1106_SetCursor(0, 8);
-      SH1106_WriteString(build_line, SH1106_COLOR_WHITE);
-    }
 
     NetDisplay_ShowStatus("ETH: init...", NULL, NULL);
   }
@@ -211,69 +176,14 @@ int main(void)
    * ethernet_phy_debug_print() in ethernetif.c. */
   uint32_t phy_debug_timer = HAL_GetTick();
 
-  CAMERA_STREAM_StatusTypeDef cam_status = CAMERA_STREAM_Init(&hi2c2, &hdcmipp, &hjpeg);
-  if (cam_status != CAMERA_STREAM_OK)
+  FRAME_SOURCE_Init();
+  MJPEG_SERVER_Init(80);
+  for (uint8_t i = 0; i < 1; i++)
   {
-    /* Sensor not found or DCMIPP wouldn't start -- see
-     * CAMERA_INTEGRATION.md's debugging checklist. Not calling
-     * Error_Handler() here on purpose so Ethernet/OLED still come up
-     * even if the camera doesn't. */
-    if (oled_status == SH1106_OK)
-    {
-      /* Show the failing stage so the cause is visible without a debugger:
-       *   NODEV = sensor didn't ACK / wrong chip-ID  (power, reset, I2C, FPC)
-       *   INIT  = sensor ACKed but register init/start failed (reg table)
-       *   DCMIPP= sensor OK but CSI/DCMIPP pipe wouldn't start */
-      const char *msg;
-      switch (cam_status)
-      {
-          case CAMERA_STREAM_ERROR_SENSOR_NOT_FOUND:
-              msg = "CAM: NODEV";
-              SH1106_SetCursor(0, 32);
-              SH1106_WriteString(msg, SH1106_COLOR_WHITE);
-              SH1106_UpdateScreen();
-              BlinkBlue(2);
-              break;
-
-          case CAMERA_STREAM_ERROR_SENSOR_INIT:
-              msg = "CAM: INIT";
-              SH1106_SetCursor(0, 32);
-              SH1106_WriteString(msg, SH1106_COLOR_WHITE);
-              SH1106_UpdateScreen();
-              BlinkBlue(3);
-              break;
-
-          case CAMERA_STREAM_ERROR_DCMIPP:
-              msg = "CAM: DCMIPP";
-              SH1106_SetCursor(0, 32);
-              SH1106_WriteString(msg, SH1106_COLOR_WHITE);
-              SH1106_UpdateScreen();
-              BlinkBlue(4);
-              break;
-
-          default:
-              msg = "CAM: FAIL";
-              SH1106_SetCursor(0, 32);
-              SH1106_WriteString(msg, SH1106_COLOR_WHITE);
-              SH1106_UpdateScreen();
-              BlinkBlue(5);
-              break;
-      }
-      SH1106_SetCursor(0, 32);
-      SH1106_WriteString(msg, SH1106_COLOR_WHITE);
-      SH1106_UpdateScreen();
-    }
-  }
-  else
-  {
-    MJPEG_SERVER_Init(80);
-    for (uint8_t i = 0; i < 1; i++)
-    {
-        BSP_LED_On(LED_RED);
-        HAL_Delay(150);
-        BSP_LED_Off(LED_RED);
-        HAL_Delay(150);
-    }
+      BSP_LED_On(LED_RED);
+      HAL_Delay(150);
+      BSP_LED_Off(LED_RED);
+      HAL_Delay(150);
   }
   /* USER CODE END 2 */
 
@@ -300,7 +210,7 @@ int main(void)
 
     /* Same story as the lwIP calls above: cheap no-ops when there's
      * nothing to do, but need to run every iteration. */
-    CAMERA_STREAM_Process();
+    FRAME_SOURCE_Process();
     MJPEG_SERVER_Poll();
 
     /* Refresh the LAN connection status row every 200ms. */
@@ -315,210 +225,24 @@ int main(void)
       last_tick = HAL_GetTick();
       oled_uptime_s++;
 
-      /* Camera bring-up telemetry, two rows. With CAM_CSI_AUTO_SCAN_ENABLE
-       * (camera_stream.h) on, these show the round-5 auto-scan's live
-       * progress; off (the default -- manual bracketing, one config at a
-       * time), they're the plain v/c/e/Er readout from round 4, since
-       * there's no scan running to report on. See
-       * CAMERA_STREAM_GetCSIScanStatus()/CAMERA_STREAM_GetDebugCounts(). */
-#if CAM_CSI_AUTO_SCAN_ENABLE
-      CAMERA_STREAM_CSIScanStatusTypeDef scan = CAMERA_STREAM_GetCSIScanStatus();
-      char line[17];
-
-      if (scan.active)
+      /* How many frames FRAME_SOURCE_PushFrame() has accepted since
+       * boot -- 0 until something (e.g. your SPI receive code) starts
+       * calling it. Climbing off zero is the quickest way to tell
+       * "frames are arriving" from across the room. */
       {
-        snprintf(line, sizeof(line), "Scan %lu/%lu",
-                 (unsigned long)scan.step, (unsigned long)scan.total);
+        char line[17];
+        snprintf(line, sizeof(line), "Frames: %lu",
+                 (unsigned long)FRAME_SOURCE_GetFrameCount());
         SH1106_FillRectangle(0, 48, SH1106_WIDTH - 1, 48 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
         SH1106_SetCursor(0, 48);
         SH1106_WriteString(line, SH1106_COLOR_WHITE);
-
-        snprintf(line, sizeof(line), "T:%luMb %luL%c",
-                 (unsigned long)scan.mbps, (unsigned long)scan.lanes,
-                 scan.inverted ? 'I' : 'P');
-        SH1106_FillRectangle(0, 56, SH1106_WIDTH - 1, 56 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
-        SH1106_SetCursor(0, 56);
-        SH1106_WriteString(line, SH1106_COLOR_WHITE);
       }
-      else
-      {
-        /* Scan finished (or the current config already worked at step 0,
-         * which looks the same from here): v climbs = sensor is
-         * streaming; c climbs = capture OK. Row 56 becomes whichever
-         * combination the scan landed on -- copy it into
-         * CAM_CSI_PHY_BITRATE/CAM_CSI_LANE_MAPPING (above) so future
-         * boots lock on step 0 again instead of re-scanning -- or, if the
-         * full sweep found nothing, that Er was never a config problem. */
-        uint32_t cap = 0, enc = 0, vs = 0, er = 0;
-        CAMERA_STREAM_GetDebugCounts(&cap, &enc, &vs, &er);
-
-        snprintf(line, sizeof(line), "v:%lu c:%lu",
-                 (unsigned long)vs, (unsigned long)cap);
-        SH1106_FillRectangle(0, 48, SH1106_WIDTH - 1, 48 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
-        SH1106_SetCursor(0, 48);
-        SH1106_WriteString(line, SH1106_COLOR_WHITE);
-
-        if (scan.locked)
-        {
-          snprintf(line, sizeof(line), "LK:%luMb %luL%c",
-                   (unsigned long)scan.mbps, (unsigned long)scan.lanes,
-                   scan.inverted ? 'I' : 'P');
-          BSP_LED_On(LED_BLUE);
-        }
-        else
-        {
-          /* Cumulative Er alone can't tell "real signal the PHY can't
-           * decode" apart from "each of the 253 SetConfig() calls causes
-           * ~1 benign transient error while the PHY re-locks" -- both
-           * look like a few-hundred total by coincidence. max_step_err
-           * (largest error-count delta seen within any SINGLE step's
-           * 120ms dwell) is what actually disambiguates it:
-           *   max_step_err stays tiny (~0-2), close to Er/253 -> every
-           *     step just saw its own reconfig transient, no step saw
-           *     sustained errors -> leans toward "PHY sees nothing real"
-           *     (power/reset/clock-lane/no-connection).
-           *   max_step_err is large (tens+) on some step -> that step's
-           *     whole dwell was full of errors -> genuine signal the PHY
-           *     couldn't decode -> lane-mapping/skew/adapter wiring,
-           *     not a bitrate still left to try. */
-          snprintf(line, sizeof(line), "Er%lu mx%lu",
-                   (unsigned long)er, (unsigned long)scan.max_step_err);
-          BSP_LED_On(LED_RED);
-        }
-        SH1106_FillRectangle(0, 56, SH1106_WIDTH - 1, 56 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
-        SH1106_SetCursor(0, 56);
-        SH1106_WriteString(line, SH1106_COLOR_WHITE);
-        (void)enc;
-      }
-#else
-      /* Manual bracketing mode: no scan running, just read the counters.
-       *   v climbs        -> LOCKED.
-       *   v:0, Er climbs  -> still wrong: edit CAM_CSI_PHY_BITRATE /
-       *                      CAM_CSI_LANE_MAPPING (camera_stream.h),
-       *                      rebuild, reflash, try the next value.
-       *   v:0, Er:0       -> no signal at all: check power/wiring. */
-      uint32_t cap = 0, enc = 0, vs = 0, er = 0;
-      CAMERA_STREAM_GetDebugCounts(&cap, &enc, &vs, &er);
-
-      char line[17];
-      snprintf(line, sizeof(line), "v:%lu c:%lu",
-               (unsigned long)vs, (unsigned long)cap);
-      SH1106_FillRectangle(0, 48, SH1106_WIDTH - 1, 48 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
-      SH1106_SetCursor(0, 48);
-      SH1106_WriteString(line, SH1106_COLOR_WHITE);
-
-      snprintf(line, sizeof(line), "e:%lu Er:%lu",
-               (unsigned long)enc, (unsigned long)er);
-      SH1106_FillRectangle(0, 56, SH1106_WIDTH - 1, 56 + FONT_HEIGHT - 1, SH1106_COLOR_BLACK);
-      SH1106_SetCursor(0, 56);
-      SH1106_WriteString(line, SH1106_COLOR_WHITE);
-#endif
 
       (void)oled_uptime_s;
       SH1106_UpdateScreen();
     }
   }
   /* USER CODE END 3 */
-}
-
-/**
-  * @brief DCMIPP Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_DCMIPP_Init(void)
-{
-
-  /* USER CODE BEGIN DCMIPP_Init 0 */
-
-  /* USER CODE END DCMIPP_Init 0 */
-
-  DCMIPP_CSI_PIPE_ConfTypeDef pCSI_PipeConfig = {0};
-  DCMIPP_CSI_ConfTypeDef pCSI_Config = {0};
-  DCMIPP_PipeConfTypeDef pPipeConfig = {0};
-
-  /* USER CODE BEGIN DCMIPP_Init 1 */
-
-  /* USER CODE END DCMIPP_Init 1 */
-  hdcmipp.Instance = DCMIPP;
-  if (HAL_DCMIPP_Init(&hdcmipp) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Pipe 1 Config
-  */
-  pCSI_PipeConfig.DataTypeMode = DCMIPP_DTMODE_DTIDA;
-  pCSI_PipeConfig.DataTypeIDA = DCMIPP_DT_RAW8;
-  pCSI_PipeConfig.DataTypeIDB = DCMIPP_DT_RAW8;
-  if (HAL_DCMIPP_CSI_PIPE_SetConfig(&hdcmipp, DCMIPP_PIPE1, &pCSI_PipeConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  pCSI_Config.PHYBitrate = DCMIPP_CSI_PHY_BT_80;
-  pCSI_Config.DataLaneMapping = DCMIPP_CSI_PHYSICAL_DATA_LANES;
-  pCSI_Config.NumberOfLanes = DCMIPP_CSI_TWO_DATA_LANES;
-  HAL_DCMIPP_CSI_SetConfig(&hdcmipp, &pCSI_Config);
-  pPipeConfig.FrameRate = DCMIPP_FRAME_RATE_ALL;
-  pPipeConfig.PixelPipePitch = 1280;
-  pPipeConfig.PixelPackerFormat = DCMIPP_PIXEL_PACKER_FORMAT_RGB565_1;
-  if (HAL_DCMIPP_PIPE_SetConfig(&hdcmipp, DCMIPP_PIPE1, &pPipeConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_DCMIPP_CSI_SetVCConfig(&hdcmipp, 0U, DCMIPP_CSI_DT_BPP8) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN DCMIPP_Init 2 */
-
-  /* Lanes/data type/bpp/pitch are all fixed at the source now (checked
-   * against RedEye.ioc) -- the four-line override that used to be here
-   * for those is gone, re-asserting values that now have a real source
-   * of truth above would just make it harder to notice if CubeMX ever
-   * disagrees with itself again. This one field still doesn't have a
-   * verified value anywhere though: */
-  /* CSI D-PHY receive bit-rate. This MUST match the rate the OV5647
-   * actually drives on its MIPI lanes, or the PHY never locks and
-   * HAL_DCMIPP_PIPE_FrameEventCallback never fires (symptom: sensor
-   * probes fine but v:0 c:0 -- no frame ever starts).
-   *
-   * Computed from the OV5647 PLL1 tree (same block as OV5640), NOT guessed:
-   *   bit_rate/lane = XVCLK * mult / pre_div / sys_div / mipi_div
-   * with XVCLK=25 MHz and the ov5647.c register table:
-   *   0x3036=0x46 -> mult=70
-   *   0x3037 unwritten -> reset default 0x03 -> pre_div=3
-   *   0x3035=0x21 -> sys_div=2, mipi_div=1   (0x21 IS the correct mainline
-   *                  VGA value; it's written twice in the kernel's
-   *                  ov5647_640x480 table and the last write, 0x21, wins)
-   *   0x3034=0x08 -> 8-bit; sits on the SCLK branch, not the serial branch,
-   *                  so it does NOT affect the lane rate.
-   * => 25*70/3/2/1 = 291.67 Mbit/s per lane (link/clock-lane 145.83 MHz).
-   * Matches the mainline ov5647 VGA link_freq of 145,833,300 Hz exactly.
-   *
-   * The DCMIPP_CSI_PHY_BT_* bands are upper bounds; 291.67 sits between
-   * _275 and _300, so BT_300 is the correct (tightest) band. The old
-   * BT_600 assumed sys_div=1 (583 Mbit/s) and was 2x too high, so the
-   * D-PHY never locked -- that was the root cause of v:0 c:0. If frames
-   * still don't land with the CSI error IRQ now wired, watch Er: Er>0
-   * means bracket +/- one band (BT_275 / BT_325) or the lane order/
-   * polarity is swapped in the MB1723 adapter; Er==0 means no signal at
-   * all (sensor not streaming / clock lane / FPC).
-   *
-   * FIX: this used to hardcode DCMIPP_CSI_PHY_BT_300 and never touch
-   * DataLaneMapping again after its CubeMX-generated default, so the
-   * CAM_CSI_PHY_BITRATE / CAM_CSI_LANE_MAPPING knobs above this function
-   * were dead -- edit/rebuild/reflash changed nothing on the wire. Both
-   * now actually feed the struct that gets applied here. */
-  pCSI_Config.PHYBitrate = CAM_CSI_PHY_BITRATE;
-  pCSI_Config.DataLaneMapping = CAM_CSI_LANE_MAPPING;
-  if (HAL_DCMIPP_CSI_SetConfig(&hdcmipp, &pCSI_Config) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /* USER CODE END DCMIPP_Init 2 */
-
 }
 
 /**
@@ -622,80 +346,6 @@ static void MX_I2C1_Init(void)
 }
 
 /**
-  * @brief I2C2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_I2C2_Init(void)
-{
-
-  /* USER CODE BEGIN I2C2_Init 0 */
-
-  /* USER CODE END I2C2_Init 0 */
-
-  /* USER CODE BEGIN I2C2_Init 1 */
-
-  /* USER CODE END I2C2_Init 1 */
-  hi2c2.Instance = I2C2;
-  hi2c2.Init.Timing = 0x30C0EDFF;
-  hi2c2.Init.OwnAddress1 = 0;
-  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-  hi2c2.Init.OwnAddress2 = 0;
-  hi2c2.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
-  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Analogue filter
-  */
-  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c2, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Digital filter
-  */
-  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c2, 0) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN I2C2_Init 2 */
-
-  /* USER CODE END I2C2_Init 2 */
-
-}
-
-/**
-  * @brief JPEG Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_JPEG_Init(void)
-{
-
-  /* USER CODE BEGIN JPEG_Init 0 */
-
-  /* USER CODE END JPEG_Init 0 */
-
-  /* USER CODE BEGIN JPEG_Init 1 */
-
-  /* USER CODE END JPEG_Init 1 */
-  hjpeg.Instance = JPEG;
-  if (HAL_JPEG_Init(&hjpeg) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN JPEG_Init 2 */
-
-  /* USER CODE END JPEG_Init 2 */
-
-}
-
-/**
   * @brief RIF Initialization Function
   * @param None
   * @retval None
@@ -713,28 +363,8 @@ static void MX_JPEG_Init(void)
   /*RIMC configuration*/
   RIMC_MasterConfig_t RIMC_master = {0};
   RIMC_master.MasterCID = RIF_CID_1;
-  RIMC_master.SecPriv = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV;
-  HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_DCMIPP, &RIMC_master);
-
   RIMC_master.SecPriv = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_NPRIV;
   HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_ETH1, &RIMC_master);
-
-  /*RISUP configuration*/
-  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_CSI , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
-  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_DCMIPP , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
-  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_JPEG , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
-  /* ADDED -- I2C2 (the sensor's SCCB/I2C bus) has a valid RIF slave index
-   * (RIF_RISC_PERIPH_INDEX_I2C2, confirmed in stm32n6xx_hal_rif.h) just
-   * like CSI/DCMIPP/JPEG/ETH1 above, all of which needed an explicit
-   * grant here -- but nothing in this project ever granted it. Whether
-   * I2C2's reset-default state actually blocks anything is unconfirmed
-   * (unlike the CSI/DCMIPP/ETH1 cases, which were each independently
-   * traced to a real symptom); this is a preventive match to its sibling
-   * peripherals, not a confirmed fix. If g_ov5647_read_errors is ever
-   * non-zero, or the sensor ID probe in CAMERA_STREAM_Init() reports
-   * "FAIL" despite CAM_PowerUp() completing, this line is now already
-   * ruled in rather than still needing to be discovered. */
-  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_I2C2 , RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
 
   /* RIF-Aware IPs Config */
 
@@ -777,22 +407,6 @@ static void MX_JPEG_Init(void)
    * causes DMA to silently stall instead of erroring out. */
   HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_ETH1, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_NPRIV);
 
-  /* DCMIPP's override that used to live here is gone -- CubeMX now
-   * generates a complete, correct native grant for it above (master
-   * *and* slave, both PRIV; RIF.RISUP.DCMIPP.Privilege=true in the
-   * ioc), matching JPEG's. The old override was actively wrong by
-   * the end: it re-set the slave attribute to NPRIV right after the
-   * generated code above had just set it to the correct PRIV,
-   * silently undoing it every build. */
-
-  /* CSI's override that used to live here is gone -- CubeMX now generates
-   * a complete, correct native grant for it above (RIF_ATTRIBUTE_SEC |
-   * RIF_ATTRIBUTE_PRIV; RIF.RISUP.CSI2HOST.Privilege=true in the ioc),
-   * matching DCMIPP and JPEG. Whether this was ever actually the reason
-   * CSI wouldn't lock is still unconfirmed either way -- a different
-   * STM32N6 board's working CSI-2 setup gets valid frame sync with no
-   * CSI-specific RIF grant at all, so this is "a real gap that's now
-   * closed", not "the confirmed fix". Rebuild and see. */
   /* USER CODE BEGIN RIF_Init 2 */
 
   /* USER CODE END RIF_Init 2 */
@@ -823,30 +437,6 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
-/* Moved here from its previous spot sitting loose between MX_xxx_Init
- * functions -- that's auto-generated territory, and this regeneration
- * (for the RIF change) wiped the definition while leaving the forward
- * declaration and all 4 call sites (both of those happen to sit in
- * USER CODE-protected spots) intact -- an undefined-reference build
- * break that would only surface at link time. USER CODE markers are the
- * only part of this file CubeMX promises not to touch; this belongs in
- * one of them the same way Netif_Config right below already does. */
-static void BlinkBlue(uint8_t count)
-{
-    while (1)
-    {
-        for (uint8_t i = 0; i < count; i++)
-        {
-            BSP_LED_On(LED_BLUE);
-            HAL_Delay(120);
-            BSP_LED_Off(LED_BLUE);
-            HAL_Delay(120);
-        }
-
-        HAL_Delay(700); // nghỉ giữa các chu kỳ
-    }
-}
 
 /**
   * @brief  Bring up the LwIP network interface on top of heth1 / ethernetif.
