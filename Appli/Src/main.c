@@ -33,6 +33,7 @@
 #include "net_display.h"
 #include "frame_source.h"
 #include "mjpeg_server.h"
+#include "spi_cam_rx.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -197,6 +198,7 @@ int main(void)
 
   FRAME_SOURCE_Init();
   MJPEG_SERVER_Init(80);
+  SPI_CAM_RX_Init();
   for (uint8_t i = 0; i < 1; i++)
   {
       BSP_LED_On(LED_RED);
@@ -231,6 +233,7 @@ int main(void)
      * nothing to do, but need to run every iteration. */
     FRAME_SOURCE_Process();
     MJPEG_SERVER_Poll();
+    SPI_CAM_RX_Process();
 
     /* Refresh the LAN connection status row every 200ms. */
     if (oled_status == SH1106_OK && (HAL_GetTick() - phy_debug_timer) >= 200)

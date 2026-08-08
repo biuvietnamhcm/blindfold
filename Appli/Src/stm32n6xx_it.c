@@ -74,7 +74,7 @@ extern DCMIPP_HandleTypeDef hdcmipp;
 extern JPEG_HandleTypeDef hjpeg;
 extern SPI_HandleTypeDef hspi5;
 /* USER CODE BEGIN EV */
-
+extern DMA_HandleTypeDef hdma_spi5_rx;  /* defined in spi_cam_rx.c */
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -273,5 +273,27 @@ void SPI5_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
+
+/**
+  * @brief This function handles EXTI line3 interrupt (PA3 / SPI5_NSS,
+  *        repurposed by spi_cam_rx.c as the Pi's CS line). The actual
+  *        handling lives in spi_cam_rx.c's HAL_GPIO_EXTI_Falling_Callback()
+  *        override, same trampoline-only pattern as every other handler in
+  *        this file.
+  */
+void EXTI3_IRQHandler(void)
+{
+  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_3);
+}
+
+/**
+  * @brief This function handles GPDMA1 Channel1 global interrupt (SPI5 RX,
+  *        added by spi_cam_rx.c -- Channel0 above is unrelated, memory-to-
+  *        memory only).
+  */
+void GPDMA1_Channel1_IRQHandler(void)
+{
+  HAL_DMA_IRQHandler(&hdma_spi5_rx);
+}
 
 /* USER CODE END 1 */
