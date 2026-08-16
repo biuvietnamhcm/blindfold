@@ -136,7 +136,7 @@ int main(void)
    * later (after MX_ETH1_Init()) by CubeMX's generated sequence; calling
    * it here too, first, fixes that ordering. The later call just
    * re-applies the same config, which is harmless. */
-  SystemIsolation_Config();
+//  SystemIsolation_Config();
 
   /* USER CODE END SysInit */
 
@@ -146,7 +146,7 @@ int main(void)
   MX_ETH1_Init();
   MX_I2C1_Init();
   MX_DCMIPP_Init();
-  MX_JPEG_Init();
+//  MX_JPEG_Init();
   MX_I2C2_Init();
   MX_SPI5_Init();
   SystemIsolation_Config();
