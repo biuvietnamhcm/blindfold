@@ -34,6 +34,7 @@
 #include "frame_source.h"
 #include "mjpeg_server.h"
 #include "spi_cam_rx.h"
+#include "app_x-cube-ai.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -146,7 +147,7 @@ int main(void)
   MX_ETH1_Init();
   MX_I2C1_Init();
   MX_DCMIPP_Init();
-//  MX_JPEG_Init();
+  MX_JPEG_Init();  /* re-enabled: AI inference decodes JPEG frames before running the NPU */
   MX_I2C2_Init();
   MX_SPI5_Init();
   SystemIsolation_Config();
@@ -206,6 +207,13 @@ int main(void)
       BSP_LED_Off(LED_RED);
       HAL_Delay(150);
   }
+
+  /* NPU bring-up: clocks/RIF/RISAF grants, then the network context.
+   * Must come after SystemIsolation_Config() above (that call and
+   * RISAF_Config() both touch RISAF regions; NPU_Config()/RISAF_Config()
+   * only add to what SystemIsolation_Config() already set up for the
+   * camera/display peripherals, they don't undo it). */
+  STM32CubeAI_Studio_AI_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -234,6 +242,7 @@ int main(void)
     FRAME_SOURCE_Process();
     MJPEG_SERVER_Poll();
     SPI_CAM_RX_Process();
+    STM32CubeAI_Studio_AI_Process();  /* no-op unless a new frame has arrived */
 
     /* Refresh the LAN connection status row every 200ms. */
     if (oled_status == SH1106_OK && (HAL_GetTick() - phy_debug_timer) >= 200)

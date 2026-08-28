@@ -41,10 +41,23 @@ _estack = ORIGIN(RAM) + LENGTH(RAM); /* end of "RAM" Ram type memory */
 _sstack = _estack - _Min_Stack_Size;
 
 /* Memories definition */
+/* ROM enlarged 511K -> 8M: the NPU weights blob (network_atonbuf.xSPI2.c,
+ * ~2.9MB, a plain `const` array) lands in ordinary .rodata below, alongside
+ * the rest of the app's code -- 511K left no room for it. XSPI2 is a 512MB
+ * part, so 8M leaves plenty of headroom.
+ *
+ * RAM shrunk 2048K -> 1024K so it ends exactly at 0x34100000: the Neural-ART
+ * compiler was told (via memory_pool.mpool, at NPU-code-generation time)
+ * that addresses 0x34100000-0x343C0000 (cpuRAM2 + npuRAM3..6) are its own
+ * scratch space to use directly -- those addresses are baked into the
+ * compiled network/epoch data, not referenced through a linker symbol, so
+ * there's nothing to place there on our side. The only way to keep the rest
+ * of this firmware from ever colliding with that range is to make sure our
+ * own RAM region never extends into it. */
 MEMORY
 {
-  ROM    (xrw)    : ORIGIN = 0x70100400,   LENGTH = 511K
-  RAM    (xrw)    : ORIGIN = 0x34000000,   LENGTH = 2048K
+  ROM    (xrw)    : ORIGIN = 0x70100400,   LENGTH = 8M
+  RAM    (xrw)    : ORIGIN = 0x34000000,   LENGTH = 1024K
 }
 
 /* Sections */
@@ -154,6 +167,20 @@ SECTIONS
     KEEP(*(.noncacheable))
     . = ALIGN(8);
     __enoncacheable = .;  /* create symbol for end of section */
+  } > RAM
+
+  /* ETH1 DMA descriptor rings (DMARxDscrTab/DMATxDscrTab in main.c carry an
+   * explicit section attribute for these two names -- give them an explicit
+   * home here instead of leaving GNU ld to guess an orphan-section
+   * placement for them). HAL_ETH_Init() fully populates every descriptor
+   * field itself, so this doesn't need to be zero-loaded -- NOLOAD, same
+   * as ST's own reference linker scripts for this driver. */
+  .eth_descriptors (NOLOAD) :
+  {
+    . = ALIGN(32);
+    KEEP(*(.RxDecripSection))
+    KEEP(*(.TxDecripSection))
+    . = ALIGN(32);
   } > RAM
 
   .gnu.sgstubs :
