@@ -142,7 +142,6 @@ static uint32_t ai_last_frame_id = 0;
 
 
 /* Input defs ----------------------------------------------------------------*/
-#include "aiTestUtility.h"
 /**
 
 // Array to store the data of the input tensor

@@ -147,7 +147,7 @@ int main(void)
   MX_ETH1_Init();
   MX_I2C1_Init();
   MX_DCMIPP_Init();
-  MX_JPEG_Init();  /* re-enabled: AI inference decodes JPEG frames before running the NPU */
+//  MX_JPEG_Init();  /* re-enabled: AI inference decodes JPEG frames before running the NPU */
   MX_I2C2_Init();
   MX_SPI5_Init();
   SystemIsolation_Config();
