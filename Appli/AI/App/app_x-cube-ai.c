@@ -98,14 +98,26 @@ void HAL_JPEG_GetDataCallback(JPEG_HandleTypeDef *hjpeg_, uint32_t NbDecodedData
   HAL_JPEG_Pause(hjpeg_, JPEG_PAUSE_RESUME_INPUT);
 }
 
-void HAL_JPEG_DataReadyCallback(JPEG_HandleTypeDef *hjpeg_, uint8_t *pDataOut, uint32_t OutDataLength)
+void HAL_JPEG_DataReadyCallback(JPEG_HandleTypeDef *hjpeg_,
+                                uint8_t *pDataOut,
+                                uint32_t OutDataLength)
 {
-  if (pJpegColorConvertFunc != NULL)
-  {
-    pJpegColorConvertFunc(pDataOut, &ai_rgb565_buf[jpeg_mcu_block_index], OutDataLength);
-    jpeg_mcu_block_index += jpeg_mcu_total_nb;
-  }
-  HAL_JPEG_ConfigOutputBuffer(hjpeg_, pDataOut, OutDataLength);
+    uint32_t ConvertedDataCount = 0;
+
+    if (pJpegColorConvertFunc != NULL)
+    {
+        pJpegColorConvertFunc(
+            pDataOut,
+            &ai_rgb565_buf[jpeg_mcu_block_index],
+            jpeg_mcu_block_index,
+            OutDataLength,
+            &ConvertedDataCount
+        );
+
+        jpeg_mcu_block_index += ConvertedDataCount;
+    }
+
+    HAL_JPEG_ConfigOutputBuffer(hjpeg_, pDataOut, OutDataLength);
 }
 
 void HAL_JPEG_DecodeCpltCallback(JPEG_HandleTypeDef *hjpeg_)
