@@ -160,7 +160,7 @@ int main(void)
 
   for(int i = 0; i < 10; i++){
     BSP_LED_Toggle(LED_GREEN);
-    HAL_Delay(50);
+    HAL_Delay(40);
   }
   SH1106_Status oled_status = SH1106_Init(&hi2c1);
 
