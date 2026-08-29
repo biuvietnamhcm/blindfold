@@ -153,7 +153,7 @@ int main(void)
   MX_ETH1_Init();
   MX_I2C1_Init();
   MX_DCMIPP_Init();
-//  MX_JPEG_Init();
+  MX_JPEG_Init();
   MX_I2C2_Init();
   MX_SPI5_Init();
   /* USER CODE BEGIN 2 */
