@@ -30,7 +30,7 @@
 #include "netif/ethernet.h"
 #include "ethernetif.h"
 #include "app_ethernet.h"
-#include "net_display.h"
+#include "ai_display.h"
 #include "frame_source.h"
 #include "mjpeg_server.h"
 #include "spi_cam_rx.h"
@@ -167,7 +167,7 @@ int main(void)
   /* Dashboard layout (128x64, 8px rows, no border so every row gets the
    * full 16-character width):
    *   y=0  : title (static, drawn once)
-   *   y=16..32 : live network status, owned by net_display.c
+   *   y=16..24 : latest banknote-classifier result, owned by ai_display.c
    *   y=48 : uptime counter, owned by the main loop below
    */
   if (oled_status == SH1106_OK)
@@ -176,7 +176,7 @@ int main(void)
     SH1106_SetCursor(0, 0);
     SH1106_WriteString("BlindFold", SH1106_COLOR_WHITE);
 
-    NetDisplay_ShowStatus("ETH: init...", NULL, NULL);
+    AiDisplay_ShowDetection("No bill detected", NULL);
   }
   else
   {
@@ -198,9 +198,6 @@ int main(void)
   Netif_Config();
   uint32_t oled_uptime_s = 0;
   uint32_t last_tick = HAL_GetTick();
-  /* Separate, faster timer for the LAN status row -- see
-   * ethernet_phy_debug_print() in ethernetif.c. */
-  uint32_t phy_debug_timer = HAL_GetTick();
 
   FRAME_SOURCE_Init();
   MJPEG_SERVER_Init(80);
@@ -248,13 +245,6 @@ int main(void)
     MJPEG_SERVER_Poll();
     SPI_CAM_RX_Process();
     STM32CubeAI_Studio_AI_Process();  /* no-op unless a new frame has arrived */
-
-    /* Refresh the LAN connection status row every 200ms. */
-    if (oled_status == SH1106_OK && (HAL_GetTick() - phy_debug_timer) >= 200)
-    {
-      phy_debug_timer = HAL_GetTick();
-      ethernet_phy_debug_print();
-    }
 
     if (oled_status == SH1106_OK && (HAL_GetTick() - last_tick) >= 1000)
     {
@@ -726,8 +716,8 @@ static void Netif_Config(void)
     netif_set_down(&gnetif);
   }
 
-  /* Drives DHCP_state / OLED status updates in app_ethernet.c whenever
-   * the link (or DHCP config) changes. */
+  /* Drives DHCP_state / status LEDs in app_ethernet.c whenever the link
+   * (or DHCP config) changes. */
   netif_set_link_callback(&gnetif, ethernet_link_status_updated);
 
   /* netif_add() -> ethernetif_init() -> low_level_init() already ran
@@ -738,12 +728,13 @@ static void Netif_Config(void)
    * and only if a callback is registered at that moment). Later, the
    * 100ms periodic check in ethernet_link_check_state() also does
    * nothing, because as far as it's concerned no transition occurs --
-   * link was already up last time it looked. Net result: the OLED gets
-   * stuck on "ETH: init..." forever and DHCP never starts.
+   * link was already up last time it looked. Net result: the status
+   * LEDs get stuck on their pre-link-up state forever and DHCP never
+   * starts.
    *
-   * Fix: manually sync the display/DHCP state machine to whatever the
-   * link state actually is right now, instead of waiting for an edge
-   * that may have already been missed. */
+   * Fix: manually sync the LED/DHCP state machine to whatever the link
+   * state actually is right now, instead of waiting for an edge that
+   * may have already been missed. */
   ethernet_link_status_updated(&gnetif);
 }
 

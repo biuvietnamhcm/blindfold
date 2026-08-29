@@ -47,6 +47,7 @@
 #include "jpeg_utils.h"
 #include "frame_source.h"
 #include "sh1106.h"
+#include "ai_display.h"
 #include "vnd_classes.h"
 
 extern JPEG_HandleTypeDef hjpeg;   /* declared in main.c, MX_JPEG_Init() must run before AI init */
@@ -327,21 +328,16 @@ int post_process()
     }
   }
 
-  SH1106_Fill(SH1106_COLOR_BLACK);
-  SH1106_SetCursor(0, 0);
   if (best_class >= 0 && best_score >= VND_CONF_THRESHOLD)
   {
     char line[24];
-    SH1106_WriteString("Detected:", SH1106_COLOR_WHITE);
-    SH1106_SetCursor(0, 16);
     snprintf(line, sizeof(line), "%s VND", vnd_class_names[best_class]);
-    SH1106_WriteString(line, SH1106_COLOR_WHITE);
+    AiDisplay_ShowDetection("Detected:", line);
   }
   else
   {
-    SH1106_WriteString("No bill detected", SH1106_COLOR_WHITE);
+    AiDisplay_ShowDetection("No bill detected", NULL);
   }
-  SH1106_UpdateScreen();
 
   return 0;
   /* USER CODE END post_process */

@@ -25,7 +25,6 @@
 #include "netif/etharp.h"
 #include "ethernetif.h"
 #include "lan8742.h"
-#include "net_display.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -403,63 +402,6 @@ void ethernet_link_check_state(struct netif *netif)
       netif_set_link_up(netif);
     }
   }
-}
-
-/**
-  * @brief  Show a human-readable LAN connection status on the OLED debug
-  *         row (y=40). Was originally a raw PHY-register dump used to
-  *         chase a "link up while unplugged" bug; root cause was a
-  *         non-responding PHY decoding as a false link-up (see
-  *         ethernet_phy_is_responding()). Now shows:
-  *           - "LAN:NO RESP xxxx" if the PHY isn't answering on MDIO at
-  *             all (xxxx is the raw BSR read, kept for reference -- it
-  *             should stop reading FFFF once the non-response is fixed)
-  *           - "LAN:DOWN" / "LAN:NEGOTIATING" if the PHY responds but
-  *             reports no cable / autonegotiation still in progress
-  *           - "LAN:UP <speed>-<duplex>" if the link is genuinely up
-  *         Call periodically from the main loop (e.g. every 200-300ms).
-  */
-void ethernet_phy_debug_print(void)
-{
-  char line[17];
-
-  if (!ethernet_phy_is_responding())
-  {
-    uint32_t bsr = 0;
-    (void)ETH_PHY_IO_ReadReg(LAN8742.DevAddr, LAN8742_BSR, &bsr);
-    snprintf(line, sizeof(line), "LAN:NO RESP %04lX", (unsigned long)(bsr & 0xFFFFU));
-  }
-  else
-  {
-    int32_t phy_status = LAN8742_GetLinkState(&LAN8742);
-
-    switch (phy_status)
-    {
-      case LAN8742_STATUS_100MBITS_FULLDUPLEX:
-        snprintf(line, sizeof(line), "LAN:UP 100M-FD");
-        break;
-      case LAN8742_STATUS_100MBITS_HALFDUPLEX:
-        snprintf(line, sizeof(line), "LAN:UP 100M-HD");
-        break;
-      case LAN8742_STATUS_10MBITS_FULLDUPLEX:
-        snprintf(line, sizeof(line), "LAN:UP 10M-FD");
-        break;
-      case LAN8742_STATUS_10MBITS_HALFDUPLEX:
-        snprintf(line, sizeof(line), "LAN:UP 10M-HD");
-        break;
-      case LAN8742_STATUS_LINK_DOWN:
-        snprintf(line, sizeof(line), "LAN:DOWN");
-        break;
-      case LAN8742_STATUS_AUTONEGO_NOTDONE:
-        snprintf(line, sizeof(line), "LAN:NEGOTIATING");
-        break;
-      default:
-        snprintf(line, sizeof(line), "LAN:ERR %ld", (long)phy_status);
-        break;
-    }
-  }
-
-  NetDisplay_ShowDebug(line);
 }
 
 /*******************************************************************************

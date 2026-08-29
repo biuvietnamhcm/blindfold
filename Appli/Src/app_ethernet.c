@@ -1,17 +1,20 @@
 /**
   ******************************************************************************
   * @file    app_ethernet.c
-  * @brief   Ethernet/DHCP state machine, driving the OLED status display
+  * @brief   Ethernet/DHCP state machine.
   ******************************************************************************
   * Adapted from STMicroelectronics' stm32n6-classic-coremw-apps reference
   * (Projects/NUCLEO-N657X0-Q/Applications/LwIP/LwIP_UDP_Echo_Server/LwIP/App
   * /app_ethernet.c) for the BlindFold project.
   *
-  * The only functional change from the reference is swapping printf() (this
-  * project has no UART/retarget set up) for NetDisplay_ShowStatus() calls,
-  * so link/DHCP state and the assigned IP show up on the OLED instead of a
-  * serial console. The DHCP state machine itself (timings, retry counting,
-  * static-IP fallback) is unchanged.
+  * This used to push link/DHCP state and the assigned IP to the OLED via
+  * NetDisplay_ShowStatus(); that status section was removed from the OLED
+  * in favor of showing the banknote classifier's result (see
+  * ai_display.h), so those calls are gone too. The DHCP state machine
+  * itself (timings, retry counting, static-IP fallback) is unchanged --
+  * this file has no UART/retarget set up, so there's nowhere left to log
+  * this state if you need it back for debugging; add printf()/retarget or
+  * a NetDisplay-style call site again if that's needed.
   ******************************************************************************
   */
 
@@ -23,7 +26,6 @@
 #endif
 #include "app_ethernet.h"
 #include "ethernetif.h"
-#include "net_display.h"
 #include <stdio.h>
 
 /* Private variables ---------------------------------------------------------*/
@@ -50,11 +52,6 @@ void ethernet_link_status_updated(struct netif *netif)
     /* Update DHCP state machine */
     DHCP_state = DHCP_START;
 #else
-    ip_addr_t ipaddr;
-    char ip_str[16];
-    ip4_addr_set_u32(&ipaddr, netif_ip4_addr(netif)->addr);
-    ip4addr_ntoa_r(&ipaddr, ip_str, sizeof(ip_str));
-    NetDisplay_ShowStatus("Static IP:", ip_str, NULL);
     BSP_LED_On(LED_GREEN);
     BSP_LED_Off(LED_RED);
 #endif /* LWIP_DHCP */
@@ -65,7 +62,6 @@ void ethernet_link_status_updated(struct netif *netif)
     /* Update DHCP state machine */
     DHCP_state = DHCP_LINK_DOWN;
 #else
-    NetDisplay_ShowStatus("Link: DOWN", "cable unplugged?", NULL);
     BSP_LED_Off(LED_GREEN);
     BSP_LED_On(LED_RED);
 #endif /* LWIP_DHCP */
@@ -101,7 +97,6 @@ void DHCP_Process(struct netif *netif)
   ip_addr_t netmask;
   ip_addr_t gw;
   struct dhcp *dhcp;
-  char ip_str[16];
 
   switch (DHCP_state)
   {
@@ -109,7 +104,6 @@ void DHCP_Process(struct netif *netif)
     {
       BSP_LED_Off(LED_GREEN);
       BSP_LED_Off(LED_RED);
-      NetDisplay_ShowStatus("DHCP: searching", "please wait...", NULL);
 
       ip_addr_set_zero_ip4(&netif->ip_addr);
       ip_addr_set_zero_ip4(&netif->netmask);
@@ -127,13 +121,6 @@ void DHCP_Process(struct netif *netif)
         DHCP_state = DHCP_ADDRESS_ASSIGNED;
         BSP_LED_On(LED_GREEN);
         BSP_LED_Off(LED_RED);
-
-        ip4_addr_set_u32(&ipaddr, netif_ip4_addr(netif)->addr);
-        ip4addr_ntoa_r(&ipaddr, ip_str, sizeof(ip_str));
-
-        char ip_line[24];
-        snprintf(ip_line, sizeof(ip_line), "IP:%s", ip_str);
-        NetDisplay_ShowStatus("DHCP: OK", ip_line, NULL);
       }
       else
       {
@@ -150,12 +137,6 @@ void DHCP_Process(struct netif *netif)
           IP_ADDR4(&gw, GW_ADDR0, GW_ADDR1, GW_ADDR2, GW_ADDR3);
           netif_set_addr(netif, &ipaddr, &netmask, &gw);
 
-          ip4_addr_set_u32(&ipaddr, netif_ip4_addr(netif)->addr);
-          ip4addr_ntoa_r(&ipaddr, ip_str, sizeof(ip_str));
-
-          char ip_line[24];
-          snprintf(ip_line, sizeof(ip_line), "IP:%s", ip_str);
-          NetDisplay_ShowStatus("DHCP timeout", "fallback static:", ip_line);
           BSP_LED_On(LED_GREEN);
           BSP_LED_Off(LED_RED);
         }
@@ -167,7 +148,6 @@ void DHCP_Process(struct netif *netif)
     {
       DHCP_state = DHCP_OFF;
 
-      NetDisplay_ShowStatus("Link: DOWN", "cable unplugged?", NULL);
       BSP_LED_Off(LED_GREEN);
       BSP_LED_On(LED_RED);
     }
