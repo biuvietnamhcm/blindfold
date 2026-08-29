@@ -132,25 +132,30 @@ int main(void)
 
   /* USER CODE BEGIN SysInit */
 
-  /* RIF grants must land before any peripheral driven by CID1 touches
-   * its own registers -- SystemIsolation_Config() is auto-called again
-   * later (after MX_ETH1_Init()) by CubeMX's generated sequence; calling
-   * it here too, first, fixes that ordering. The later call just
-   * re-applies the same config, which is harmless. */
-//  SystemIsolation_Config();
-
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_GPDMA1_Init();
+  /* SystemIsolation_Config() has to run here, not at the end where CubeMX
+   * puts it (see ProjectManager.functionlistsort in RedEye.ioc, fixed to
+   * match this order so regenerating won't put it back at the end). It
+   * grants RIF/RISC "secure + privileged" access to JPEG, DCMIPP, SPI5
+   * and CSI; until that grant lands, the CPU can't touch those
+   * peripherals' own registers -- the RIF interconnect blocks the access,
+   * which surfaces as a HardFault (nothing in this project enables the
+   * BusFault handler, so a RIF violation never shows up as a BusFault).
+   * That's what was faulting inside MX_JPEG_Init() below. It can't move
+   * any earlier than this, though: it also calls
+   * HAL_DMA_ConfigChannelAttributes() on handle_GPDMA1_Channel0, which
+   * needs MX_GPDMA1_Init() to have set that handle's Instance first. */
+  SystemIsolation_Config();
   MX_ETH1_Init();
   MX_I2C1_Init();
   MX_DCMIPP_Init();
-//  MX_JPEG_Init();  /* re-enabled: AI inference decodes JPEG frames before running the NPU */
+//  MX_JPEG_Init();
   MX_I2C2_Init();
   MX_SPI5_Init();
-  SystemIsolation_Config();
   /* USER CODE BEGIN 2 */
 
   for(int i = 0; i < 10; i++){
