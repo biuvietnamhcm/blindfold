@@ -53,14 +53,18 @@
 extern JPEG_HandleTypeDef hjpeg;   /* declared in main.c, MX_JPEG_Init() must run before AI init */
 extern I2C_HandleTypeDef  hi2c1;   /* SH1106 OLED, already brought up by main.c */
 
-/* Below this raw sigmoid-output score, we treat a detection as "nothing
+/* Below this dequantized score, we treat a detection as "nothing
  * confident enough" rather than guessing. Tune by watching real readings
  * on a few known bills; there's no single right number for every camera/
- * lighting setup. */
+ * lighting setup. NOTE: run-12 (best_int8_uint8io) quantizes its output
+ * far more coarsely than the previous model -- see the dequant comment in
+ * post_process() -- so re-validate this threshold against real bills
+ * rather than assuming 0.55 still behaves the same way. */
 #define VND_CONF_THRESHOLD   0.55f
 
-/* Model input is fixed at 320x320x3 (see best_int8.onnx) -- matches what
- * the Pi already sends, so no resize step is needed here. */
+/* Model input is fixed at 320x320x3 (see best_int8_uint8io_OE_3_3_1.onnx,
+ * run-12) -- matches what the Pi already sends, so no resize step is
+ * needed here. */
 #define AI_IMG_SIZE          320U
 #define AI_IMG_PIXELS        (AI_IMG_SIZE * AI_IMG_SIZE)
 
@@ -231,7 +235,7 @@ int acquire_and_process_data()
   uint8_t  *jpeg_data = NULL;
   uint32_t  jpeg_len = 0, new_frame_id = 0;
   uint32_t  i;
-  int8_t   *in_r, *in_g, *in_b;
+  uint8_t  *in;
 
   if (!FRAME_SOURCE_GetLatestJPEG(ai_last_frame_id, &jpeg_data, &jpeg_len, &new_frame_id))
   {
@@ -267,16 +271,19 @@ int acquire_and_process_data()
     return 0;
   }
 
-  /* RGB565 -> per-channel int8, NCHW layout, in one pass. Quantization here
-   * is QLinear(scale=1/255, zero_point=-128) per the model's input tensor
-   * (best_int8.onnx / stedgeai report) -- for a pixel value already in
-   * 0..255, that's just "value - 128" with no floating point needed. If
-   * you ever swap in a model quantized differently, redo this as
-   * round(pixel/255.0f/scale) + zero_point using that model's actual
-   * scale/zero-point instead of assuming this shortcut still applies. */
-  in_r = (int8_t *)stai_input[0];
-  in_g = in_r + AI_IMG_PIXELS;
-  in_b = in_g + AI_IMG_PIXELS;
+  /* RGB565 -> interleaved uint8, NHWC layout, in one pass. run-12
+   * (best_int8_uint8io) was retrained/requantized with a different input
+   * contract than the old model -- see stai_network.h:
+   *   STAI_NETWORK_IN_1_FORMAT  = STAI_FORMAT_U8   (was STAI_FORMAT_S8)
+   *   STAI_NETWORK_IN_1_FLAGS   = ...CHANNEL_LAST  (was ...CHANNEL_FIRST)
+   *   STAI_NETWORK_IN_1_SCALES  = 1/255, OFFSETS = 0   (was zero_point -128)
+   * Unsigned with zero_point 0 means a pixel byte already in 0..255 IS the
+   * quantized value as-is -- no "- 128" needed. Channel-last means R,G,B
+   * are written interleaved per pixel instead of to three separate planes.
+   * If you ever swap in a model quantized differently, re-derive this from
+   * that model's actual STAI_NETWORK_IN_1_* macros instead of assuming
+   * this still applies. */
+  in = (uint8_t *)stai_input[0];
 
   for (i = 0; i < AI_IMG_PIXELS; i++)
   {
@@ -284,13 +291,10 @@ int acquire_and_process_data()
     uint8_t r5 = (px >> 11) & 0x1F;
     uint8_t g6 = (px >> 5)  & 0x3F;
     uint8_t b5 =  px        & 0x1F;
-    uint8_t r8 = (uint8_t)((r5 << 3) | (r5 >> 2));
-    uint8_t g8 = (uint8_t)((g6 << 2) | (g6 >> 4));
-    uint8_t b8 = (uint8_t)((b5 << 3) | (b5 >> 2));
 
-    in_r[i] = (int8_t)(r8 - 128);
-    in_g[i] = (int8_t)(g8 - 128);
-    in_b[i] = (int8_t)(b8 - 128);
+    in[i * 3U + 0U] = (uint8_t)((r5 << 3) | (r5 >> 2));
+    in[i * 3U + 1U] = (uint8_t)((g6 << 2) | (g6 >> 4));
+    in[i * 3U + 2U] = (uint8_t)((b5 << 3) | (b5 >> 2));
   }
 
   return 1;
@@ -303,11 +307,25 @@ int acquire_and_process_data()
  * OLED if it clears VND_CONF_THRESHOLD. We only care about "what bill is
  * this" here, not "where in frame" -- so this deliberately skips decoding
  * the box coordinates and skips NMS. If you later want to report more than
- * one bill at a time, this is the place to add both back in. */
+ * one bill at a time, this is the place to add both back in.
+ *
+ * run-12 (best_int8_uint8io) changed the output contract too: the previous
+ * model's runtime auto-dequantized this tensor to FLOAT32 for us; this one
+ * is generated with the runtime handing back the raw quantized STAI_FORMAT_S8
+ * bytes instead (see stai_network.h: STAI_NETWORK_OUT_1_FORMAT/SCALES/
+ * OFFSETS), so we dequantize by hand: real = (raw - zero_point) * scale.
+ * Box coords and class scores still share one scale/zero-point and the same
+ * [13][2100] row-major layout, so the indexing below is unchanged -- only
+ * the element type and the added dequant step are new. Because that shared
+ * scale is sized for the box-coordinate range (roughly 0..320 px), it's
+ * coarse for the 0..1 class-score range -- worth confirming with real bills
+ * that VND_CONF_THRESHOLD still discriminates the way you expect. */
 int post_process()
 {
   /* USER CODE BEGIN post_process */
-  const float *out = (const float *)stai_output[0];
+  static const float   out_scale[]  = STAI_NETWORK_OUT_1_SCALES;
+  static const int32_t out_offset[] = STAI_NETWORK_OUT_1_OFFSETS;
+  const int8_t *out = (const int8_t *)stai_output[0];
   const uint32_t n_anchors = 2100U;
   const uint32_t n_classes = VND_NUM_CLASSES;   /* 9 */
 
@@ -319,7 +337,7 @@ int post_process()
   {
     for (c = 0; c < n_classes; c++)
     {
-      float score = out[(4U + c) * n_anchors + a];
+      float score = ((float)out[(4U + c) * n_anchors + a] - (float)out_offset[0]) * out_scale[0];
       if (score > best_score)
       {
         best_score = score;

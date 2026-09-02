@@ -204,9 +204,9 @@ int main(void)
   SPI_CAM_RX_Init();
   for (uint8_t i = 0; i < 1; i++)
   {
-      BSP_LED_On(LED_RED);
+      BSP_LED_On(LED_BLUE);
       HAL_Delay(150);
-      BSP_LED_Off(LED_RED);
+      BSP_LED_Off(LED_BLUE);
       HAL_Delay(150);
   }
 
@@ -217,7 +217,21 @@ int main(void)
    * camera/display peripherals, they don't undo it). */
   STM32CubeAI_Studio_AI_Init();
   /* USER CODE END 2 */
+  if (oled_status == SH1106_OK)
+  {
+      SH1106_FillRectangle(
+          0,
+          32,
+          SH1106_WIDTH - 1,
+          32 + FONT_HEIGHT - 1,
+          SH1106_COLOR_BLACK
+      );
 
+      SH1106_SetCursor(0, 32);
+      SH1106_WriteString("Init Complete", SH1106_COLOR_WHITE);
+
+      SH1106_UpdateScreen();
+  }
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
@@ -230,8 +244,8 @@ int main(void)
      * called often (every loop iteration, not gated behind HAL_Delay)
      * or incoming frames back up in the RX descriptor ring and DHCP/ARP
      * timing gets sluggish. */
-    ethernetif_input(&gnetif);
-    sys_check_timeouts();
+//    ethernetif_input(&gnetif);
+//    sys_check_timeouts();
 #if LWIP_NETIF_LINK_CALLBACK
     Ethernet_Link_Periodic_Handle(&gnetif);
 #endif
@@ -241,10 +255,60 @@ int main(void)
 
     /* Same story as the lwIP calls above: cheap no-ops when there's
      * nothing to do, but need to run every iteration. */
+    /* ================= DEBUG PIPELINE ================= */
+
     FRAME_SOURCE_Process();
-    MJPEG_SERVER_Poll();
+
+    if (oled_status == SH1106_OK)
+    {
+        SH1106_FillRectangle(
+            0,
+            32,
+            SH1106_WIDTH - 1,
+            32 + FONT_HEIGHT - 1,
+            SH1106_COLOR_BLACK
+        );
+
+        SH1106_SetCursor(0, 32);
+        SH1106_WriteString("PASS: FRAME_SRC", SH1106_COLOR_WHITE);
+        SH1106_UpdateScreen();
+    }
+
+
     SPI_CAM_RX_Process();
-    STM32CubeAI_Studio_AI_Process();  /* no-op unless a new frame has arrived */
+
+    if (oled_status == SH1106_OK)
+    {
+        SH1106_FillRectangle(
+            0,
+            32,
+            SH1106_WIDTH - 1,
+            32 + FONT_HEIGHT - 1,
+            SH1106_COLOR_BLACK
+        );
+
+        SH1106_SetCursor(0, 32);
+        SH1106_WriteString("PASS: SPI_CAM", SH1106_COLOR_WHITE);
+        SH1106_UpdateScreen();
+    }
+
+
+    STM32CubeAI_Studio_AI_Process();
+
+    if (oled_status == SH1106_OK)
+    {
+        SH1106_FillRectangle(
+            0,
+            32,
+            SH1106_WIDTH - 1,
+            32 + FONT_HEIGHT - 1,
+            SH1106_COLOR_BLACK
+        );
+
+        SH1106_SetCursor(0, 32);
+        SH1106_WriteString("PASS: AI", SH1106_COLOR_WHITE);
+        SH1106_UpdateScreen();
+    }
 
     if (oled_status == SH1106_OK && (HAL_GetTick() - last_tick) >= 1000)
     {
