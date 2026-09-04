@@ -628,7 +628,7 @@ static const stai_network_info __stai_network_network_info = {
     .n_weights = STAI_NETWORK_WEIGHTS_NUM,
     .n_states = STAI_NETWORK_STATES_NUM,
 
-    .c_model_datetime = "2026-08-31 18:52:47",
+    .c_model_datetime = "2026-09-04 12:05:51",
 
     .n_nodes = 464,
 
@@ -652,6 +652,15 @@ static const stai_network_info __stai_network_network_info = {
         STAI_DECLARE_ARRAY(int32_t, STAI_NETWORK_OUT_1_RANK, STAI_NETWORK_OUT_1_SHAPE),
         STAI_DECLARE_ARRAY(float, STAI_NETWORK_OUT_1_SCALE_OFFSET_NUM, STAI_NETWORK_OUT_1_SCALES),
         STAI_DECLARE_ARRAY(int16_t, STAI_NETWORK_OUT_1_SCALE_OFFSET_NUM, STAI_NETWORK_OUT_1_OFFSETS)
+        ),
+      STAI_INIT_TENSOR(
+        STAI_NETWORK_OUT_2_NAME,
+        STAI_NETWORK_OUT_2_FLAGS,
+        STAI_NETWORK_OUT_2_FORMAT,
+        STAI_NETWORK_OUT_2_SIZE_BYTES,
+        STAI_DECLARE_ARRAY(int32_t, STAI_NETWORK_OUT_2_RANK, STAI_NETWORK_OUT_2_SHAPE),
+        STAI_DECLARE_ARRAY(float, STAI_NETWORK_OUT_2_SCALE_OFFSET_NUM, STAI_NETWORK_OUT_2_SCALES),
+        STAI_DECLARE_ARRAY(int16_t, STAI_NETWORK_OUT_2_SCALE_OFFSET_NUM, STAI_NETWORK_OUT_2_OFFSETS)
         ),
     },
     .activations = NULL,

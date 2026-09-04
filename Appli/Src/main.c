@@ -152,7 +152,7 @@ int main(void)
   SystemIsolation_Config();
   MX_ETH1_Init();
   MX_I2C1_Init();
-  MX_DCMIPP_Init();
+//  MX_DCMIPP_Init();
   MX_JPEG_Init();
   MX_I2C2_Init();
   MX_SPI5_Init();
@@ -268,7 +268,6 @@ int main(void)
             32 + FONT_HEIGHT - 1,
             SH1106_COLOR_BLACK
         );
-
         SH1106_SetCursor(0, 32);
         SH1106_WriteString("PASS: FRAME_SRC", SH1106_COLOR_WHITE);
         SH1106_UpdateScreen();
@@ -291,7 +290,6 @@ int main(void)
         SH1106_WriteString("PASS: SPI_CAM", SH1106_COLOR_WHITE);
         SH1106_UpdateScreen();
     }
-
 
     STM32CubeAI_Studio_AI_Process();
 

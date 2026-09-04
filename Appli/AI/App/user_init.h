@@ -21,7 +21,7 @@
 
 #include "stai_network.h"
 
-#define STAI_NETWORK_WEIGHTS_TOTAL_SIZE_BYTES 3012945
+#define STAI_NETWORK_WEIGHTS_TOTAL_SIZE_BYTES 3014865
 
 // uncomment the line and change address to load the weights to a specific address
 // #define WEIGHTS_DEST_ADDRESS 0x0
