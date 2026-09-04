@@ -96,6 +96,24 @@ extern I2C_HandleTypeDef  hi2c1;   /* SH1106 OLED, already brought up by main.c 
  * build to confirm it and the rest of the app's .bss actually fit. */
 static uint8_t ai_rgb565_buf[AI_IMG_PIXELS * 2U];
 
+/* Raw, still-YCbCr MCU landing buffer -- what the JPEG hardware itself
+ * writes into as it decodes, BEFORE jpeg_utils.c's color-convert function
+ * turns it into RGB565. This must be a buffer distinct from ai_rgb565_buf:
+ * jpeg_utils.c's *_ARGB_ConvertBlocks() helpers walk pInBuffer (this
+ * buffer) sequentially by raw MCU size while writing pOutBuffer
+ * (ai_rgb565_buf) at absolute pixel offsets -- for 4:2:0 source data one
+ * MCU is 384 raw bytes in but 512 RGB565 bytes out, so if both pointers
+ * alias the same array the converter overwrites not-yet-read raw MCU data
+ * with already-converted pixels a few MCUs into the frame. Sized for the
+ * worst realistic case (4:4:4, no chroma subsampling, 3 bytes/pixel) so
+ * the whole frame lands in a single HAL_JPEG_DataReadyCallback() round
+ * regardless of what subsampling the Pi's encoder picked -- if it only
+ * needed one round for 4:2:0, staying single-round here removes any
+ * dependency on jpeg_mcu_block_index tracking MCU counts vs. byte counts
+ * correctly across multiple rounds. */
+#define JPEG_MCU_BUF_SIZE   (AI_IMG_PIXELS * 3U)
+static uint8_t jpeg_mcu_buf[JPEG_MCU_BUF_SIZE] __attribute__((aligned(32)));
+
 /* ---- JPEG decode (interrupt-driven HAL_JPEG + jpeg_utils color convert) - */
 static volatile uint8_t  jpeg_decode_done;
 static volatile uint8_t  jpeg_decode_error;
@@ -267,7 +285,7 @@ int acquire_and_process_data()
   jpeg_decode_error = 0;
   pJpegColorConvertFunc = NULL;
 
-  if (HAL_JPEG_Decode_IT(&hjpeg, jpeg_data, jpeg_len, ai_rgb565_buf, sizeof(ai_rgb565_buf)) != HAL_OK)
+  if (HAL_JPEG_Decode_IT(&hjpeg, jpeg_data, jpeg_len, jpeg_mcu_buf, sizeof(jpeg_mcu_buf)) != HAL_OK)
   {
     FRAME_SOURCE_ReleaseJPEG(jpeg_data);
     return 0;
@@ -282,6 +300,18 @@ int acquire_and_process_data()
     {
       /* busy-wait for the JPEG ISR chain to finish */
     }
+  }
+
+  /* If we timed out above, hjpeg is still mid-transaction (paused waiting
+   * on input/output it's never going to get) and HAL_JPEG_STATE_BUSY_DECODING
+   * never clears on its own -- every future HAL_JPEG_Decode_IT() call would
+   * fail fast with HAL_BUSY forever after just one bad/truncated frame.
+   * Abort resets hjpeg->State back to READY so the next frame gets a clean
+   * shot regardless of what happened to this one. */
+  if (!jpeg_decode_done)
+  {
+    (void)HAL_JPEG_Abort(&hjpeg);
+    jpeg_decode_error = 1;
   }
 
   FRAME_SOURCE_ReleaseJPEG(jpeg_data);
