@@ -11,16 +11,16 @@ Release/
 **/Release/
 
 # Generated object files
-*.o
-*.d
-*.su
-*.elf
-*.hex
-*.bin
-*.map
-*.list
-*.lst
-*.a
+# *.o
+# *.d
+# *.su
+# *.elf
+# *.hex
+# *.bin
+# *.map
+# *.list
+# *.lst
+# *.a
 
 
 # OS files
