@@ -1,4 +1,3 @@
-
 /**
   ******************************************************************************
   * @file    app_x-cube-ai.c
@@ -56,15 +55,37 @@ extern I2C_HandleTypeDef  hi2c1;   /* SH1106 OLED, already brought up by main.c 
 /* Below this dequantized score, we treat a detection as "nothing
  * confident enough" rather than guessing. Tune by watching real readings
  * on a few known bills; there's no single right number for every camera/
- * lighting setup. NOTE: run-12 (best_int8_uint8io) quantizes its output
- * far more coarsely than the previous model -- see the dequant comment in
- * post_process() -- so re-validate this threshold against real bills
- * rather than assuming 0.55 still behaves the same way. */
+ * lighting setup.
+ *
+ * NOTE: this now assumes the SPLIT-OUTPUT model
+ * (best_int8_uint8io_split_outputs.onnx) rather than the original
+ * best_int8_uint8io_OE_3_3_1.onnx. The original model concatenated box
+ * coordinates (range ~0..320px) and class scores (range 0..1) into one
+ * [1,13,2100] output tensor before its final int8 quantization step, which
+ * forced both branches to share a single scale sized for the box-coordinate
+ * range. That left only ~1 usable bit of resolution for the class scores --
+ * confirmed by inspecting the ONNX graph and running it: a raw sigmoid
+ * confidence had to exceed ~90% before the dequantized score moved off
+ * exactly 0.0, so VND_CONF_THRESHOLD could never discriminate real-world
+ * confidence levels no matter how it was tuned.
+ *
+ * The split-output model exposes the class-score branch as its own output
+ * tensor, cut from the graph BEFORE that shared final quantize step, at the
+ * point where it already had its own well-calibrated per-tensor scale
+ * (confirmed: 0.00390625 = 1/256, i.e. full 256-level resolution across
+ * 0..1, vs. 2 usable levels before). Box coordinates are untouched --
+ * verified bit-identical to the original model's box output on the same
+ * input -- they just live in their own tensor now instead of sharing one
+ * with the class scores. Re-validate VND_CONF_THRESHOLD against real bills
+ * once this is flashed; 0.55 is a reasonable starting point now that the
+ * underlying data can actually represent it, but it was never meaningfully
+ * tested against the old model's broken resolution. */
 #define VND_CONF_THRESHOLD   0.55f
 
-/* Model input is fixed at 320x320x3 (see best_int8_uint8io_OE_3_3_1.onnx,
- * run-12) -- matches what the Pi already sends, so no resize step is
- * needed here. */
+/* Model input is fixed at 320x320x3 (see
+ * best_int8_uint8io_split_outputs.onnx, derived from run-12's
+ * best_int8_uint8io_OE_3_3_1.onnx) -- matches what the Pi already sends,
+ * so no resize step is needed here. */
 #define AI_IMG_SIZE          320U
 #define AI_IMG_PIXELS        (AI_IMG_SIZE * AI_IMG_SIZE)
 
@@ -301,31 +322,40 @@ int acquire_and_process_data()
   /* USER CODE END acquire_and_process_data */
 }
 
-/* Reads the [1,13,2100] output tensor (4 box coords + 9 class scores, per
- * anchor, already through a final sigmoid per the generated network), picks
- * the single most confident class across every anchor, and shows it on the
- * OLED if it clears VND_CONF_THRESHOLD. We only care about "what bill is
- * this" here, not "where in frame" -- so this deliberately skips decoding
- * the box coordinates and skips NMS. If you later want to report more than
- * one bill at a time, this is the place to add both back in.
+/* Reads the class-score output tensor (9 class scores per anchor, already
+ * through the network's own sigmoid + its own dedicated int8 quantization),
+ * picks the single most confident class across every anchor, and shows it
+ * on the OLED if it clears VND_CONF_THRESHOLD. We only care about "what
+ * bill is this" here, not "where in frame" -- so this deliberately ignores
+ * the box-coordinate output tensor entirely and skips NMS. If you later
+ * want to report more than one bill at a time, or draw a box, that's
+ * stai_output[BOX_OUT_INDEX] (shape [1,2100,4]) -- untouched by this split,
+ * still one shared scale, still fine for pixel-range box coordinates.
  *
- * run-12 (best_int8_uint8io) changed the output contract too: the previous
- * model's runtime auto-dequantized this tensor to FLOAT32 for us; this one
- * is generated with the runtime handing back the raw quantized STAI_FORMAT_S8
- * bytes instead (see stai_network.h: STAI_NETWORK_OUT_1_FORMAT/SCALES/
- * OFFSETS), so we dequantize by hand: real = (raw - zero_point) * scale.
- * Box coords and class scores still share one scale/zero-point and the same
- * [13][2100] row-major layout, so the indexing below is unchanged -- only
- * the element type and the added dequant step are new. Because that shared
- * scale is sized for the box-coordinate range (roughly 0..320 px), it's
- * coarse for the 0..1 class-score range -- worth confirming with real bills
- * that VND_CONF_THRESHOLD still discriminates the way you expect. */
+ * This model exposes TWO output tensors instead of one -- see the
+ * VND_CONF_THRESHOLD comment above for why. The class-score tensor's shape
+ * per the ONNX graph is [1, 2100, 9], anchor-major / class-minor
+ * (index = anchor * 9 + class), which is what the indexing below assumes.
+ *
+ * IMPORTANT: confirm CLS_OUT_INDEX below against your regenerated
+ * stai_network.h -- X-CUBE-AI assigns STAI_NETWORK_OUT_1_* / OUT_2_* in
+ * whatever order it decides to emit the two outputs, which may not match
+ * the order they're listed in the ONNX file. Check STAI_NETWORK_OUT_1_SHAPE
+ * vs OUT_2_SHAPE (or CHANNEL, if named that way) -- whichever one shows 9
+ * is the class-score tensor and its index (0 or 1) is what CLS_OUT_INDEX
+ * should be. Also double check the axis order the generator actually used:
+ * if STAI_NETWORK_OUT_x_FLAGS/SHAPE indicates anchors are the fast-varying
+ * dimension instead (i.e. it kept the original [class][anchor] layout
+ * rather than the ONNX's [anchor][class] layout), flip the indexing to
+ * (c * n_anchors + a) instead of (a * n_classes + c). */
+#define CLS_OUT_INDEX   1U   /* TODO: confirm against generated stai_network.h */
+
 int post_process()
 {
   /* USER CODE BEGIN post_process */
-  static const float   out_scale[]  = STAI_NETWORK_OUT_1_SCALES;
-  static const int32_t out_offset[] = STAI_NETWORK_OUT_1_OFFSETS;
-  const int8_t *out = (const int8_t *)stai_output[0];
+  static const float   cls_scale[]  = STAI_NETWORK_OUT_2_SCALES;
+  static const int32_t cls_offset[] = STAI_NETWORK_OUT_2_OFFSETS;
+  const int8_t *cls = (const int8_t *)stai_output[CLS_OUT_INDEX];
   const uint32_t n_anchors = 2100U;
   const uint32_t n_classes = VND_NUM_CLASSES;   /* 9 */
 
@@ -337,7 +367,7 @@ int post_process()
   {
     for (c = 0; c < n_classes; c++)
     {
-      float score = ((float)out[(4U + c) * n_anchors + a] - (float)out_offset[0]) * out_scale[0];
+      float score = ((float)cls[a * n_classes + c] - (float)cls_offset[0]) * cls_scale[0];
       if (score > best_score)
       {
         best_score = score;

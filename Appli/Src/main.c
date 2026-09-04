@@ -183,12 +183,12 @@ int main(void)
     /* No ACK from the OLED (wrong wiring, missing pull-ups, or wrong
      * address) -- fast-blink red so it's obvious at a glance, then
      * keep going instead of hanging forever. */
-    for (uint8_t i = 0; i < 10; i++)
-    {
-      BSP_LED_Toggle(LED_RED);
-      HAL_Delay(80);
-    }
-    BSP_LED_Off(LED_RED);
+//    for (uint8_t i = 0; i < 10; i++)
+//    {
+//      BSP_LED_Toggle(LED_RED);
+//      HAL_Delay(80);
+//    }
+//    BSP_LED_Off(LED_RED);
   }
   BSP_LED_Toggle(LED_GREEN);
 
